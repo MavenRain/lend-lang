@@ -24,8 +24,13 @@ USER rulings (the request, 2026-10-17):
 - Host: TinyCC.
 - Target: EVM-deployable bytecode for any EVM chain.
 
-Defaults: section 9 (O1 to O26). These are my calls. They are NOT ruled. The
-USER rules them at S1.
+USER rulings (S1, 2026-10-17):
+
+- Every default in section 9 is RULED. Where an item has options, (a) is
+  the ruling.
+- The kit is hosts/tcc-evm-contract, and the kernel route is the
+  orbit-lang lineage (O2). Tests are guest-language files plus `langc run`
+  scripts. The kit gate scripts stay. We add no new harness.
 
 ## 2. The reference design
 
@@ -257,7 +262,7 @@ for each build), the counts in docs/STATUS.md, and a USER commit.
 | Slice | Content | Gate additions |
 |---|---|---|
 | S0 | seed: design, plan, kit scaffold | kit gate GREEN |
-| S1 | rulings on O1 to O26 | none |
+| S1 | rulings on O1 to O26: DONE 2026-10-17, all defaults | none |
 | S2 | port orbit-lang 7734007 (kernel, precompiles, sample domain removed) | the orbit-lang S2 Prop-like refusal rows; precompile vectors |
 | S3 | base-span pruning (mechanism of orbit-lang 3a1ba76); the lend-lang signature declared | REFUSE_KIT rows for each kit name and sealed-lang base op; REFUSE_SIG rows for the lend-lang signature |
 | S4 | port orbit-lang 9e28399: Orbit M after act, elim on Sum and Unit | Orbit fold without isSet, wrong boundary, Orbit path at run time |
@@ -270,8 +275,8 @@ for each build), the counts in docs/STATUS.md, and a USER commit.
 
 ## 9. Open items
 
-All items below are defaults (my calls, NOT ruled). Where an item has
-options, (a) is the default.
+USER ruling (S1, 2026-10-17): every default below is RULED. Where an item
+has options, (a) is the ruling. O20 is a USER ruling from the request.
 
 - O1 Name: lend-lang, after the lending ledger.
 - O2 Kernel route: (a) the orbit-lang lineage (section 5: port 7734007,
