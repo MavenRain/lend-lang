@@ -1,12 +1,12 @@
 # Validation
 
 Date: 2026-10-18. tcc: 0.9.28rc. evm (go-ethereum): 1.14.12. Host
-executable: `build/langc` at 68ce871 plus the S5 changes.
+executable: `build/langc` at 4484ce6 plus the S6 changes.
 
 `make -B check` passes: it builds `langc` and the test tools with tcc,
 runs the clang `-Wall -Wextra -Wswitch-enum -Werror` check, and runs the
-gate scripts. It runs 29 examples, 19 parse refusals, 161 check
-refusals, 22 kit-only refusals, 75 evals, 5 runs, 10 run refusals, 8
+gate scripts. It runs 32 examples, 19 parse refusals, 164 check
+refusals, 22 kit-only refusals, 85 evals, 5 runs, 10 run refusals, 8
 asmtool checks, 3 builds, 16 lower refusals, 33 build checks, 20
 dispatch checks, 43 evm steps, 18 precompile steps, 13 mock rows, 15
 diff rows, 24 emit regressions and the review, domain, path, fuel,
@@ -123,3 +123,35 @@ evaluator and passes with generic line metadata retained for endpoint
 recovery. All 44 path regressions and `make -B check` pass after the fix.
 Additional checks cover reversed and reparameterized univalence paths,
 transport between Fin 1 and Unit, and compositions at nested Glue types.
+
+The S6 port applies orbit-lang 8dd82a3 (indexed families, `and`
+blocks, block folds, the refusals HIT_INDEX and BLOCK_ORDER, and the
+examples `hiit` and `qiit`; PLAN section 8). Two new parts follow. O21:
+`elim` accepts a uniform domain family of points and 1-dimensional
+paths, with one case for each constructor and a PathP case for each
+path constructor. Membership: front.c puts the kernel HIT Membership
+(memberSet, admit, exit) directly after the program `def Agent`. The
+review adds the example `membership`, the check refusals
+`membership-premise` (PATH_END) and `membership-missing-case`
+(TYPE_MISMATCH) and 5 evals. A family with no parameters now gets its
+case types (the session 3 env fix). Mutants E1 to E7, E6b, HI1, BO and
+BOb are killed (11 of 12, 2 admissions). HI2 survives, because its
+orbit-lang killer row is not in an orbit-lang commit (docs/STATUS.md
+section S6).
+
+The staged S6 review fixes two eliminator defects. A constructor boundary
+could eliminate its own family against reserved, unfinished signatures:
+SelfElim with a point carrying Nat and an arc carrying SelfElim accepted
+the numeric case 0 for that unfinished arc. Normalizing a nested arc then
+failed with INTERNAL (application of a non-function). Elimination now
+refuses the current block with HIT_BOUNDARY, as fold does.
+
+An unannotated motive on a two-point family could instead infer Unit from
+its second case: `elim (fun b => Unit) unit unit swOff` failed with
+TYPE_NOT_FUNCTION. Printed neutral eliminators had the same failure, or
+TYPE_INFER when their result was applied to another argument. The checker
+now validates arity-compatible scrutinee candidates, retaining a valid
+Unit interpretation when a later family argument applies its result.
+The C fronttool regressions cover both fixes, normal-form round trips,
+recursive point and path cases, and elimination of an earlier family
+inside a later boundary. `make -B check` passes after these fixes.

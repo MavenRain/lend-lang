@@ -515,3 +515,108 @@ loop. No mutant is INVALID.
 | apply, gate, mutants | wf-builder Fable xhigh | died, 429 (req_011Cg9QZ7NBC7zTpR19EajAp), before a file change |
 | apply, gate, mutants | wf-builder opus xhigh | died, `reasoning_extraction` (req_011Cg9Qc1RLKE6USFQBBTFi5), before a file change |
 | apply, gate, mutants, records | main loop | by hand |
+
+## S6
+
+S6 ports orbit-lang 8dd82a3 (indexed families, `and` blocks, block
+folds, HIT_INDEX, BLOCK_ORDER) on 4484ce6, the USER S5 commit on
+68ce871. Two new parts follow: O21 (`elim` over a uniform domain family
+of points and 1-dimensional paths) and Membership (a kernel HIT after
+`def Agent`). PLAN section 8, "Builder call (S6, 2026-10-18)", has the
+design.
+
+### Counts
+
+| Gate line | lend-lang S5 | after the port (session 1) | lend-lang S6 |
+|---|---|---|---|
+| examples | 29 | 31 | 32 |
+| parse refusals | 19 | 19 | 19 |
+| check refusals | 161 | 162 | 164 |
+| kit-only refusals | 22 | 22 | 22 |
+| evals | 75 | 80 | 85 |
+| runs, run refusals | 5, 10 | 5, 10 | 5, 10 |
+| asmtool checks | 8 | 8 | 8 |
+| builds | 3 | 3 | 3 |
+| lower refusals | 16 | 16 | 16 |
+| build checks | 33 | 33 | 33 |
+| dispatch | 20 | 20 | 20 |
+
+The port adds 2 examples (hiit, qiit), 1 check refusal and 5 evals.
+Session 3 adds 1 example (membership), 2 check refusals
+(membership-premise, membership-missing-case) and 5 evals (copySet,
+copyExitEnd, windAdmit, windExit, windAdmitEnd). The evm steps (43) and
+the other counts equal S5.
+
+### Port
+
+The patch is `git -C ~/Documents/orbit-lang diff a12973a 8dd82a3 -- .`
+without docs/PLAN.md, README.md, design and docs/STATUS.md: 14 files, 64
+hunks, +635 -76. `git apply --3way` gives 1 conflict file,
+test/fronttool.c (1 hunk: the lend-lang `kit` helper and the orbit-lang
+`normal_roundtrip_in` both stay), and 0 code conflicts in src. The
+orbit-lang S6 B4 rows are not in a commit, thus they are not ported.
+
+### O21 and Membership
+
+- O21 (session 2): rule_elim accepts a third scrutinee class, a uniform
+  domain family of points and 1-dimensional paths. check.c
+  `elim_family_case` gives the type of each case: a function of the
+  fields, with the hypothesis `P x` after each recursive field, to
+  `P (c fields)` or to `PathP (fun i => P (p fields i)) E0 E1`. eval.c
+  `elim_ctor` applies the case and, for a path constructor, path_apply
+  at r with the ends E0 and E1.
+- Fix (session 3): the empty Env is NULL. For a family with no
+  parameters (Membership, S1), the field loop stopped at the first field
+  and `elim_family_case` returned NULL with no diagnostic (`langc:
+  (null): :`). Now the flag `ok` records a failed env_push (the OOM
+  diagnostic).
+- Membership (session 2): front.c puts kernel/membership.lang
+  (ORIGIN_DOMAIN) directly after the program `def Agent`. Each field
+  name has the constructor name as prefix.
+- Deviation 1 (session 2): the point constructor is `memberSet`, not
+  `base`. S1 owns `base` (REFUSE_NAME, rule R4).
+- Deviation 2 (session 3): there is no elim row into a 2-valued type.
+  admit and exit join each member set to each other member set, thus a
+  consistent map from Membership to Sum Unit Unit is constant and its
+  path cases are refl. A refl case cannot show a difference between
+  path_apply at r and path_apply at i0. Thus the eval rows use copy
+  (into Membership) and wind (into S1).
+
+### Mutants
+
+~/Documents/lend-lang-work/S6-mutants.{sh,log}. mut() and the row
+helpers are the S5 helpers; ex() and front() are the orbit-lang S6
+helpers. mut() needs build/langc and build/fronttool newer than the
+mutant, with `make -B` per build. HI1, HI2, BO and BOb are the
+orbit-lang S6 mutants. Before the run, `rg -c -F` found each anchor
+once.
+
+| Id | Target | Change | Result | Killer |
+|---|---|---|---|---|
+| E1 | check.c:1001 rule_elim | no scrutinee is a domain family (`fam = 0`) | KILLED | membership.lang: TYPE_MISMATCH at loopAt |
+| E2 | check.c:1005 rule_elim | the case count test allows one case less | KILLED | membership-missing-case: segmentation fault (exit 139); rule_elim reads the scrutinee past the arguments |
+| E3 | check.c:940 elim_family_case | the PathP ends are swapped | KILLED | membership.lang: PATH_UIP at loopAt |
+| E4 | eval.c:783 elim_ctor | path_apply at the i0 end, not at r | KILLED | eval windAdmit gives `fun i => base` |
+| E5 | front.c:72 orbit_after_act_choice | the splice looks for `AgentX` | KILLED | membership.lang: NAME_UNKNOWN Membership at admitOne |
+| E6 | front.c:32 MEMBERSHIP_STEP | the P field ends at the `to` value | KILLED | membership-premise admitted |
+| E6b | check.c end_fail | PATH_END never fires | KILLED | membership-premise admitted (the row has no second refusal class) |
+| E7 | check.c:925 elim_family_case | `ok` also needs p > 0 (the stop at the first field for a family with no parameters) | KILLED | membership.lang: OOM at loopAt |
+| HI1 | check.c ctor_result | a constructor of an indexed family with no result passes | KILLED | fronttool domain: wanted HIT_INDEX, got ok |
+| HI2 | check.c ctor_result | the result head test never fires | SURVIVED | the orbit-lang killer `hiit-wrong-head` is an orbit-lang B4 row, not in a commit, not ported |
+| BO | check.c header_order | a header that names a later sort passes | KILLED | fronttool domain: wanted BLOCK_ORDER, got REFUSE_REC |
+| BOb | check.c header_order and unknown_name | BO and the R3 later-name test both pass | KILLED | fronttool domain: wanted BLOCK_ORDER, got NAME_UNKNOWN |
+
+The loop kills 11 of 12 mutants with 2 admissions (E6, E6b). E2 is a
+crash kill: the gate row fails, but with a segmentation fault, not with
+a refusal. No row meets a second refusal class (E6b). Each mutated file
+is restored. The shasums of src/front/check.c, src/front/front.c and
+src/front/eval.c are equal before and after the loop. No mutant is
+INVALID.
+
+### Builders
+
+| Stage | Tier | Result |
+|---|---|---|
+| port, O21, Membership, rows | wf-builder Fable xhigh | died in session 1, 429, before a file change |
+| port, O21, Membership, rows | wf-builder opus xhigh | died in session 1, `reasoning_extraction`, before a file change |
+| sessions 1 to 4 | main loop | by hand; the session 4 records by a wf-closer from fixed text |

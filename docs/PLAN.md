@@ -146,10 +146,12 @@ scratch probe.
 | S3 | orbit-lang | 3a1ba76 (mechanism only) | the visibility tag, REFUSE_KIT, `langc --kit`; the orbit-lang signature rows are replaced by lend-lang rows |
 | S4 | orbit-lang | 9e28399 | the orbit quotient as a kernel declaration after `act`; `elim` on Sum and Unit |
 | S5 | orbit-lang S5 (coin-lang 44c917f, 91d7091, 34acff5) | a12973a | Fin, equivalences, Glue, ua, uaBeta, hcomp at Glue and U |
-| S6 | new | (design reference: zkpolicy-lang a1780a9, f176ac6) | HIITs, QIITs, dependent elim on a HIT with PathP cases (O21) |
+| S6 | orbit-lang S6, then new | 6fa6a15, 8dd82a3; new: O21 elim, Membership | HIITs and QIITs (orbit-lang: indexed families, blocks, block folds); dependent elim on a uniform HIT with PathP cases (O21); Membership as a kernel HIT |
 
-S6 is new work in this lineage, as in orbit-lang. If orbit-lang reaches S6
-first, lend-lang ports it.
+orbit-lang reached S6 first (6fa6a15 and 8dd82a3: indexed families and
+blocks), thus lend-lang S6 ports those commits. orbit-lang moved O21 to its
+S7. lend-lang builds O21 and Membership in S6 (section 8, "Builder call
+(S6)").
 
 Proof irrelevance is prohibited (section 1, O20). The S2 port brings the
 orbit-lang refusals: `Prop` and `SProp` are reserved names (NAME_UNKNOWN),
@@ -267,7 +269,7 @@ for each build), the counts in docs/STATUS.md, and a USER commit.
 | S3 | base-span pruning (mechanism of orbit-lang 3a1ba76); the lend-lang signature declared: DONE 2026-10-17 | REFUSE_KIT rows for each kit name and sealed-lang base op; REFUSE_SIG rows for the lend-lang signature |
 | S4 | port orbit-lang 9e28399: Orbit after actChoice (choices only; the M index waits for Obj and act), elim on Sum and Unit: DONE 2026-10-18 | Orbit fold without isSet, wrong boundary, Orbit path at run time |
 | S5 | Glue, ua, uaBeta, hcomp at Glue and U (port of orbit-lang a12973a): DONE 2026-10-18 | Glue boundary mismatch, ua on a non-equivalence |
-| S6 | HIITs, QIITs, dependent elim on a HIT with PathP cases; Membership as a kernel HIT | wrong index in a path constructor, inductive-inductive order, a missing PathP case, admit without `M a ≡ 0` |
+| S6 | HIITs, QIITs, dependent elim on a HIT with PathP cases; Membership as a kernel HIT: DONE 2026-10-18 | wrong index in a path constructor, inductive-inductive order, a missing PathP case, admit without `M a ≡ 0` |
 | S7 | DAO prelude: Obj, act, ChoiceRule, Aggregation, Gov, IsFixedPointObj, Config, amendPath; LendingLedger over Membership by ua | a non-invariant constitution, a wrong unit, an exit that does not forfeit, the ∃ of IsSelfConstituting as a Prop |
 | S8 | ZK ledger: Pedersen on BN254 in C, Sigma-protocol verifier lowering, zkEquiv, PrivateLoan, borrow, repay, liquidate | known-answer vectors; mutants: wrong opening, range overflow, non-member step, step on a Forfeited position, point not on the curve |
 | S9 | contract end to end: deploy, vote, amend, borrow, repay, liquidate; host and EVM differential; gas table; chain probe | differential rows, revert rows, EIP-170 and EIP-3860 size limits |
@@ -392,6 +394,131 @@ port, the mutants and the records are by hand. The gate `make -B check`
 is GREEN, exit 0: examples 29, check refusals 161, evals 75, lower
 refusals 16, build checks 33, and the other counts equal to S4. The
 mutant loop kills 10 of 11 mutants (docs/STATUS.md section S5).
+
+Builder call (S6, 2026-10-18). Three parts. Kernel survey:
+~/Documents/lend-lang-work/S6-survey-kernel.md (orbit-lang 8dd82a3 cites).
+Facts: `elim` is a builtin `elim P c1 .. cn x` for Sum and Unit only
+(rule_elim, one TYPE_MISMATCH for other scrutinees); fold has no motive
+and checks a path case as `PathP (fun _ => RES) B0 B1`; a fold boundary
+end must be a field, a path field at an interval, or an earlier point
+constructor (HIT_BOUNDARY otherwise); there is no decidable equality and no
+function update; Fin is VIS_INTERNAL; the S4 Orbit splice parses fixed
+source text with origin ORIGIN_DOMAIN after the program def.
+
+Part 1, the port (session 1). On 4484ce6 (the USER S5 commit on 68ce871),
+the patch is `git -C ~/Documents/orbit-lang diff a12973a 8dd82a3 -- .`
+without docs/PLAN.md, README.md, design and docs/STATUS.md (14 files, 64
+hunks, +635 -76), applied with `git apply --3way` (scratch probe first,
+same result). The apply gave 1 conflict file, test/fronttool.c (1 hunk:
+the lend-lang `kit` helper and the orbit-lang `normal_roundtrip_in` both
+stay). There are 0 code conflicts in src. The port gives the orbit-lang S6
+design (orbit-lang PLAN section 8, "Builder call (S6, 2026-10-17)"):
+index telescopes, constructor result annotations, `and` blocks, Size,
+Bag, Charter and Ratified in domain.lang, block folds, examples/hiit.lang
+and qiit.lang, the refusal codes HIT_INDEX ("a wrong index in a path
+constructor") and BLOCK_ORDER ("inductive-inductive order"). The orbit-lang
+S6 rows that are not in a commit (its B4 rows) are not ported. The gate
+`make -B check` is GREEN, exit 0: examples 31, check refusals 162, evals
+80, and the other counts equal to S5.
+
+Part 2, O21 (new). `elim` gets a third scrutinee class: a uniform domain
+family whose constructors are points and 1-dimensional path constructors.
+- Surface: no parser change. `elim P c1 .. cn x`, one case for each
+  constructor in declaration order. The motive is `P : F params -> Type k`.
+- Point case of `c (x1 : A1) .. (xk : Ak)`: a function of the fields in
+  order, and each recursive field (type `F params`) is followed directly
+  by its hypothesis `P x`. It returns `P (c x1 .. xk)`.
+- Path case of `p (fields) (i : I) [ ~i -> e0, i -> e1 ]`: a function of
+  the fields and hypotheses as above (no interval argument). It returns
+  `PathP (fun i => P (p fields i)) E0 E1`. Ek is the hypothesis of ek
+  when ek is a recursive field, and the point case at the arguments of ek
+  (with their hypotheses) when ek is a point constructor application.
+- Refusals: a missing or extra case is TYPE_MISMATCH at the elim case
+  count (gate row "a missing PathP case"); a path case with wrong ends
+  fails the check against its PathP type. A family with a 2-dimensional
+  constructor (a squash), an indexed or block family, a constructor with a
+  path field over the family, Quot and Orbit stay TYPE_MISMATCH at the
+  one rule_elim site (USER ruling S6). No new refusal code.
+- Eval (reduce_elim): a point constructor value applies its case to the
+  fields and the hypotheses (each hypothesis is elim at the recursive
+  field). A path constructor value at an interval value r applies its
+  case, then `path_apply` at r with the ends E0 and E1, as fold_path does.
+  A neutral or a formal hcomp scrutinee stays neutral (a dependent hcomp
+  over the motive needs comp; not in S6).
+- Lowering: no change. elim at a word position is REFUSE_LOWER.
+- Fix (session 3): in check.c `elim_family_case`, the empty Env is NULL.
+  For a family with no parameters (Membership, S1), the field loop
+  (the `env != NULL` test) stopped at the first field, and the function
+  returned NULL with no diagnostic (`langc: (null): :`). Now the flag
+  `ok` records a failed env_push, which gives the OOM diagnostic.
+
+Part 3, Membership (new). src/front/front.c splices fixed source text with
+origin ORIGIN_DOMAIN directly after the program `def Agent` (the
+orbit_after_act_choice precedent; USER ruling S6). With 2 := Sum Unit
+Unit, 0 := inl unit and 1 := inr unit, the text declares:
+
+```text
+family Membership :=
+    base (m : Agent -> Sum Unit Unit)
+  | admit (m n : Agent -> Sum Unit Unit) (a : Agent)
+          (p : Path (Sum Unit Unit) (m a) (inl unit))
+          (q : Path (Sum Unit Unit) (n a) (inr unit))
+          (r : (b : Agent) -> Sum (Path Agent b a) (Path (Sum Unit Unit) (m b) (n b)))
+          (i : I) [ ~i -> base m, i -> base n ]
+  | exit  (as admit, with inl and inr swapped in p and q)
+```
+
+The premises p, q and r say that n is `M[a := 1]` (exit: `M[a := 0]`) up
+to paths, thus no decidable equality on Agent is needed and both ends are
+point constructors at fields (USER ruling S6). There are no 2-cells (O6
+(a)). Each field name has the constructor name as prefix (admitM,
+admitP and the rest), thus no field name is a global name (the
+orbit-lang domain.lang precedent). A program without `def Agent` has no
+Membership.
+
+Deviation 1 (session 2): the point constructor is `memberSet`, not
+`base`. S1 owns `base` (REFUSE_NAME, rule R4).
+
+Deviation 2 (session 3): there is no elim row into a 2-valued type.
+admit and exit join each member set to each other member set, thus a
+consistent map from Membership to Sum Unit Unit is constant and its path
+cases are refl. A refl case cannot show a difference between path_apply
+at r and path_apply at i0. Thus the eval rows use copy (into
+Membership) and wind (into S1).
+
+Rows (session 3): examples/membership.lang (Agent, nobody, onlyOne,
+sameElse, sameElseBack, admitOne, exitOne, loopAt (a dependent elim
+with PathP cases), copy, copySet, copyExitEnd, wind into S1, windAdmit,
+windExit, windAdmitEnd). The check row "admit without `M a ≡ 0`" is
+test/check/membership-premise.lang, PATH_END ("the path at i1 is inr
+unit, but the type needs inl unit"). The check row "a missing PathP
+case" is test/check/membership-missing-case.lang, TYPE_MISMATCH ("elim
+on Membership needs a motive, 3 cases and a scrutinee"). The eval rows:
+copySet and copyExitEnd => `memberSet (fun b => inl unit)`, windAdmit
+=> `fun i => loop i`, windExit => `fun i => loop ~i`, windAdmitEnd =>
+`base`.
+
+Mutants: one admission mutant for each new site (the rule_elim HIT class,
+the elim case count, the path case type, the reduce_elim path branch, the
+Membership splice and its premise p), with a "b" mutant for a row with a
+second refusal class.
+
+Result (S6, sessions 1 to 4, 2026-10-18). The gate `make -B check` is
+GREEN, exit 0: examples 32, parse refusals 19, check refusals 164,
+kit-only refusals 22, evals 85, lower refusals 16, build checks 33, and
+the other counts equal to S5. The mutant loop kills 11 of 12 mutants
+(docs/STATUS.md section S6). HI2 survives: its orbit-lang killer, the
+fronttool row `hiit-wrong-head`, is an orbit-lang B4 row. That row is
+not in a commit, thus it is not ported. The builders died in session 1
+(Fable xhigh: 429; opus xhigh: `reasoning_extraction`), thus all four
+sessions are by hand.
+
+USER ruling (S6, 2026-10-18; AskUserQuestion, all recommended):
+- Membership premises: relational (p, q, r above), not a kernel function
+  update.
+- Declaration site: the kernel splice after `def Agent`, not a
+  parameterized domain family.
+- O21 scope: uniform 1-HITs only.
 
 ## 9. Open items
 

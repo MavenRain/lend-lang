@@ -1,0 +1,63 @@
+-- Membership (S6, PLAN section 8 Part 3). The kernel puts the family
+-- Membership directly after the program `def Agent`. With 2 := Sum Unit Unit,
+-- 0 := inl unit and 1 := inr unit, memberSet m is the member set
+-- m : Agent -> 2, admit is a path from m to n when m a is 0, n a is 1 and n
+-- is m at each other agent (the premises p, q and r), and exit is the same
+-- path with 0 and 1 swapped. elim over Membership has a PathP case for each
+-- path constructor (O21).
+def Agent : Type 0 := Sum Unit Unit
+-- nobody has no member. onlyOne has the agent inr unit as its one member.
+def nobody : Agent -> Sum Unit Unit := fun (b : Agent) => inl unit
+def onlyOne : Agent -> Sum Unit Unit := fun (b : Agent) => either (fun (u : Unit) => inl unit) (fun (u : Unit) => inr unit) b
+-- The premise r: each agent is inr unit, or nobody and onlyOne agree at it.
+-- No eta for Unit, so the inr case is an elim on the payload.
+def sameElse : (b : Agent) -> Sum (Path Agent b (inr unit)) (Path (Sum Unit Unit) (nobody b) (onlyOne b)) :=
+  fun (b : Agent) => elim (fun (c : Agent) => Sum (Path Agent c (inr unit)) (Path (Sum Unit Unit) (nobody c) (onlyOne c)))
+    (fun (u : Unit) => inr refl)
+    (fun (u : Unit) => elim (fun (w : Unit) => Sum (Path Agent (inr w) (inr unit)) (Path (Sum Unit Unit) (nobody (inr w)) (onlyOne (inr w)))) (inl refl) u) b
+def sameElseBack : (b : Agent) -> Sum (Path Agent b (inr unit)) (Path (Sum Unit Unit) (onlyOne b) (nobody b)) :=
+  fun (b : Agent) => elim (fun (c : Agent) => Sum (Path Agent c (inr unit)) (Path (Sum Unit Unit) (onlyOne c) (nobody c)))
+    (fun (u : Unit) => inr refl)
+    (fun (u : Unit) => elim (fun (w : Unit) => Sum (Path Agent (inr w) (inr unit)) (Path (Sum Unit Unit) (onlyOne (inr w)) (nobody (inr w)))) (inl refl) u) b
+-- admit the agent inr unit, then let it exit.
+def admitOne : Path Membership (memberSet nobody) (memberSet onlyOne) :=
+  fun (i : I) => admit nobody onlyOne (inr unit) refl refl sameElse i
+def exitOne : Path Membership (memberSet onlyOne) (memberSet nobody) :=
+  fun (i : I) => exit onlyOne nobody (inr unit) refl refl sameElseBack i
+-- A dependent elim: each point of Membership has a loop. The admit and exit
+-- cases are PathP cases with the six fields as arguments.
+def loopAt : (x : Membership) -> Path Membership x x :=
+  fun (x : Membership) => elim (fun (y : Membership) => Path Membership y y)
+    (fun (m : Agent -> Sum Unit Unit) => refl)
+    (fun (m : Agent -> Sum Unit Unit) (n : Agent -> Sum Unit Unit) (a : Agent) (p : Path (Sum Unit Unit) (m a) (inl unit))
+      (q : Path (Sum Unit Unit) (n a) (inr unit)) (r : (b : Agent) -> Sum (Path Agent b a) (Path (Sum Unit Unit) (m b) (n b))) =>
+      fun (i : I) => refl)
+    (fun (m : Agent -> Sum Unit Unit) (n : Agent -> Sum Unit Unit) (a : Agent) (p : Path (Sum Unit Unit) (m a) (inr unit))
+      (q : Path (Sum Unit Unit) (n a) (inl unit)) (r : (b : Agent) -> Sum (Path Agent b a) (Path (Sum Unit Unit) (m b) (n b))) =>
+      fun (i : I) => refl) x
+-- The identity by elim: each case gives its constructor back.
+def copy : Membership -> Membership :=
+  fun (x : Membership) => elim (fun (y : Membership) => Membership)
+    (fun (m : Agent -> Sum Unit Unit) => memberSet m)
+    (fun (m : Agent -> Sum Unit Unit) (n : Agent -> Sum Unit Unit) (a : Agent) (p : Path (Sum Unit Unit) (m a) (inl unit))
+      (q : Path (Sum Unit Unit) (n a) (inr unit)) (r : (b : Agent) -> Sum (Path Agent b a) (Path (Sum Unit Unit) (m b) (n b))) =>
+      fun (i : I) => admit m n a p q r i)
+    (fun (m : Agent -> Sum Unit Unit) (n : Agent -> Sum Unit Unit) (a : Agent) (p : Path (Sum Unit Unit) (m a) (inr unit))
+      (q : Path (Sum Unit Unit) (n a) (inl unit)) (r : (b : Agent) -> Sum (Path Agent b a) (Path (Sum Unit Unit) (m b) (n b))) =>
+      fun (i : I) => exit m n a p q r i) x
+def copySet : Membership := copy (memberSet nobody)
+def copyExitEnd : Membership := copy (exitOne @ i1)
+-- The winding map: a member set goes to base, admit goes around the loop
+-- and exit goes back.
+def wind : Membership -> S1 :=
+  fun (x : Membership) => elim (fun (y : Membership) => S1)
+    (fun (m : Agent -> Sum Unit Unit) => base)
+    (fun (m : Agent -> Sum Unit Unit) (n : Agent -> Sum Unit Unit) (a : Agent) (p : Path (Sum Unit Unit) (m a) (inl unit))
+      (q : Path (Sum Unit Unit) (n a) (inr unit)) (r : (b : Agent) -> Sum (Path Agent b a) (Path (Sum Unit Unit) (m b) (n b))) =>
+      fun (i : I) => loop i)
+    (fun (m : Agent -> Sum Unit Unit) (n : Agent -> Sum Unit Unit) (a : Agent) (p : Path (Sum Unit Unit) (m a) (inr unit))
+      (q : Path (Sum Unit Unit) (n a) (inl unit)) (r : (b : Agent) -> Sum (Path Agent b a) (Path (Sum Unit Unit) (m b) (n b))) =>
+      fun (i : I) => loop (~i)) x
+def windAdmit : Path S1 base base := fun (i : I) => wind (admitOne @ i)
+def windExit : Path S1 base base := fun (i : I) => wind (exitOne @ i)
+def windAdmitEnd : S1 := wind (admitOne @ i1)

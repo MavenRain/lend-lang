@@ -35,8 +35,14 @@ typedef struct {
   uint32_t level;     /* the number of binders */
   unsigned depth;
   uint32_t eta_count;
-  uint32_t self;      /* the family whose fields are checked, or NO_FAMILY */
-  uint32_t self_uses; /* the uses of that family in the current field */
+  uint32_t self;       /* the first family of the block whose fields are checked, or NO_FAMILY */
+  uint32_t self_count; /* the number of sorts of that block (S6) */
+  /* A block fold (S6): the target of each sort, while a case type is made,
+     or NULL. */
+  const Value *const *fold_targets;
+  uint32_t fold_first;
+  uint32_t fold_count;
+  uint32_t self_uses;  /* the uses of a sort of that block in the current field */
   /* The levels of the earlier point fields of the current field, from
      FIELD_BASE up to FIELD_TOP (S4 item 13), and the uses of them. */
   uint32_t field_base;
@@ -817,34 +823,151 @@ static const Value *elim_case(Checker *c, const Value *pv, const Value *st, uint
                            quote_value(c->m, c->level + 1u, apply_value(c->m, pv, tyop(c, i == 0u ? OP_INL : OP_INR, 1, x, NULL, NULL)))));
 }
 
-/* A printed motive has no binder annotation. Its domain can instead come
-   from the scrutinee at the Unit or Sum argument position. */
-static const Value *elim_domain(Checker *c, const Term *const *args, uint32_t argc) {
-  const Value *dom = lam_domain(c, args[0]);
+/* FAM is a sort of the block whose fields are checked (S6). */
+static int in_block(const Checker *c, uint32_t fam) {
+  return c->self != NO_FAMILY && fam >= c->self && fam - c->self < c->self_count;
+}
+
+/* A domain family with an elim (O21, S6): uniform, outside a block, and
+   its constructors are points and 1-dimensional paths with no path field
+   and no field over a recursive field. Quot, Orbit and the truncations
+   have a 2-dimensional constructor. */
+static int elim_family(const Machine *m, const Value *st) {
+  const FamilyInfo *f;
   uint32_t i;
-  if (dom != NULL || args[0]->kind != TERM_LAM || args[0]->left != NULL)
-    return dom;
-  for (i = 2u; i < argc && i < 4u; i++) {
-    if (try_infer(c, args[i], &dom) != NULL && val_is(dom, i == 2u ? OP_UNIT : OP_SUM))
-      return dom;
+  uint32_t j;
+  if (!val_is(st, OP_FAMILY) || st->inst >= m->family_count)
+    return 0;
+  f = &m->families[st->inst];
+  if (f->index_count != 0u || f->block_count != 1u)
+    return 0;
+  for (i = f->first_ctor; i < f->first_ctor + f->ctor_count; i++) {
+    if (m->ctors[i].interval_count > 1u)
+      return 0;
+    for (j = 0; j < m->ctors[i].field_count; j++) {
+      if (m->ctors[i].fields[j].path || m->ctors[i].fields[j].over_recursive)
+        return 0;
+    }
   }
-  return NULL;
+  return 1;
+}
+
+/* The image under elim of V, a boundary value of a path constructor at the
+   field variables (O21, S6). A recursive field at level L is its
+   hypothesis, the variable at level L + 1. An earlier point constructor is
+   its case, one of the DONE cases in CORES, at its fields, each recursive
+   field followed by its image. */
+static const Value *elim_image(Checker *c, const Core *const *cores, uint32_t done, const Value *v) {
+  Machine *m = c->m;
+  const CtorInfo *ci;
+  const Value *acc;
+  uint32_t first;
+  uint32_t i;
+  if (v == NULL)
+    return NULL;
+  if (v->kind == VAL_VAR && v->nat >= c->level)
+    return val_var(m, v->nat + 1u);
+  first = val_is(v, OP_CTOR) && v->inst < m->ctor_count ? m->families[m->ctors[v->inst].family].first_ctor : 0u;
+  if (!val_is(v, OP_CTOR) || v->inst < first || v->inst - first >= done || m->ctors[v->inst].interval_count != 0u)
+    return vnul(FAIL(c, "HIT_BOUNDARY", "elim cannot map the boundary term %s: a boundary term must be a recursive field or an earlier point constructor", show(c, v)));
+  ci = &m->ctors[v->inst];
+  acc = here(c, cores[v->inst - first]);
+  for (i = 0; i < ci->field_count && acc != NULL; i++) {
+    const Value *arg = v->args[m->families[ci->family].param_count + i];
+    const Value *h;
+    acc = apply_value(m, acc, arg);
+    h = acc != NULL && ci->fields[i].recursive ? elim_image(c, cores, done, arg) : NULL;
+    acc = !ci->fields[i].recursive ? acc : h == NULL ? NULL : apply_value(m, acc, h);
+  }
+  return acc;
+}
+
+/* The constructor INST at the N arguments A, with the last one set to R. */
+static const Value *ctor_at(Machine *m, uint32_t inst, const Value *const *a, uint32_t n, const Value *r) {
+  const Value **b = arena_alloc(m->arena, (size_t)n * sizeof *b);
+  uint32_t i;
+  if (b == NULL)
+    return NULL;
+  for (i = 0; i + 1u < n; i++)
+    b[i] = a[i];
+  b[n - 1u] = r;
+  return val_ctor(m, inst, b, n);
+}
+
+/* The type of the elim case of constructor DONE of the family ST with the
+   motive PV (O21, S6): the fields, each recursive field x followed by its
+   hypothesis P x, then P (c x1 .. xk) for a point constructor, or
+   PathP (fun i => P (p x1 .. xk i)) E0 E1 for a path constructor, with Ek
+   the image of the boundary at ik. CORES holds the DONE earlier cases. */
+static const Value *elim_family_case(Checker *c, const Value *pv, const Value *st, const Core *const *cores, uint32_t done) {
+  Machine *m = c->m;
+  const FamilyInfo *f = &m->families[st->inst];
+  uint32_t inst = f->first_ctor + done;
+  const CtorInfo *ctor = &m->ctors[inst];
+  uint32_t p = f->param_count;
+  uint32_t n = ctor->field_count;
+  const Value **a = arena_alloc(m->arena, ((size_t)p + n + 1u) * sizeof *a);
+  const Core **types = arena_alloc(m->arena, (2u * (size_t)n + 1u) * sizeof *types);
+  const char **names = arena_alloc(m->arena, (2u * (size_t)n + 1u) * sizeof *names);
+  const Env *env = env_of(c, st->args, p);
+  const Core *ends[2];
+  const Core *t;
+  uint32_t l = c->level;
+  uint32_t i;
+  int side;
+  int ok = 1;
+  if (a == NULL || types == NULL || names == NULL)
+    return vnul(FAIL(c, "OOM", "out of memory"));
+  for (i = 0; i < p; i++)
+    a[i] = st->args[i];
+  /* The empty environment is NULL (a family with no parameters), thus OK
+     and not ENV records a failed push. */
+  for (i = 0; i < n && ok; i++, l++) {
+    names[l - c->level] = ctor->fields[i].name;
+    types[l - c->level] = quote_value(m, l, eval_core(m, env, ctor->fields[i].type));
+    a[p + i] = val_var(m, l);
+    env = env_push(m, env, a[p + i]);
+    ok = env != NULL;
+    if (ctor->fields[i].recursive) {
+      l++;
+      names[l - c->level] = "_";
+      types[l - c->level] = quote_value(m, l, apply_value(m, pv, a[p + i]));
+    }
+  }
+  if (!ok)
+    return vnul(FAIL(c, "OOM", "out of memory"));
+  if (ctor->interval_count == 0u) {
+    t = quote_value(m, l, apply_value(m, pv, val_ctor(m, inst, a, p + n)));
+  } else {
+    a[p + n] = val_ivar(m, l);
+    for (side = 0; side < 2; side++)
+      ends[side] = quote_value(m, l, elim_image(c, cores, done, ctor_at(m, inst, a, p + n + 1u, val_iend(m, side))));
+    t = ends[0] == NULL || ends[1] == NULL ? NULL : core_ends(c, CORE_PATHP, "i", NULL, quote_value(m, l + 1u, apply_value(m, pv, val_ctor(m, inst, a, p + n + 1u))), ends[0], ends[1]);
+  }
+  for (i = l - c->level; i > 0u && t != NULL; i--) {
+    if (types[i - 1u] == NULL)
+      return NULL;
+    t = core_bind(c, CORE_PI, names[i - 1u], types[i - 1u], t);
+  }
+  return t == NULL ? NULL : here(c, t);
 }
 
 /* elim P c1 .. cn x (USER ruling S4): the dependent eliminator of Sum A B
-   (two cases) and Unit (one case), with the motive P : X -> Type k and the
-   type P x. A type with path constructors, Nat, List or a Path has no elim
-   (O21, no K). */
-static const Core *rule_elim(Call *k) {
+   (two cases), Unit (one case) and a uniform domain family of points and
+   1-dimensional paths (O21, S6: one case for each constructor), with the
+   motive P : X -> Type k and the type P x. Nat, List, a Path and a family
+   with a 2-dimensional constructor have no elim (no K). */
+static const Core *elim_at_domain(Call *k, const Value *st) {
   Checker *c = k->c;
-  const Value *st = elim_domain(c, k->args, k->argc);
   const Value *pt = NULL;
   const Value *cod;
   const Value *pv;
-  const Core *cores[4] = {NULL, NULL, NULL, NULL};
+  const Core **cores;
+  const Core *motive;
   const Core *s;
   uint32_t want;
   uint32_t i;
+  int fam;
   if (st != NULL && k->args[0]->kind == TERM_LAM && k->args[0]->left == NULL) {
     uint64_t level = 0;
     const Core *body;
@@ -852,34 +975,83 @@ static const Core *rule_elim(Call *k) {
       return NULL;
     body = check_type(c, k->args[0]->right, &level);
     pop(c);
-    cores[0] = core_bind(c, CORE_LAM, k->args[0]->name, NULL, body);
+    motive = core_bind(c, CORE_LAM, k->args[0]->name, NULL, body);
     pt = val_arrow(c->m, st, val_univ(c->m, level));
   } else {
-    cores[0] = infer(c, k->args[0], &pt);
+    motive = infer(c, k->args[0], &pt);
   }
-  if (cores[0] == NULL)
+  if (motive == NULL)
     return NULL;
   cod = pt != NULL && pt->kind == VAL_PI ? closure_apply(c->m, pt, val_var(c->m, c->level)) : NULL;
   if (cod == NULL || cod->kind != VAL_UNIV)
     return nul(FAIL(c, "TYPE_MISMATCH", "elim needs a motive of type X -> Type k, found a term of type %s", show(c, pt)));
   st = pt->dom;
-  if (!val_is(st, OP_SUM) && !val_is(st, OP_UNIT))
-    return nul(FAIL(c, "TYPE_MISMATCH", "elim needs a scrutinee of type Sum A B or Unit, found a motive on %s", show(c, st)));
-  want = val_is(st, OP_SUM) ? 2u : 1u;
+  fam = elim_family(c->m, st);
+  if (val_is(st, OP_FAMILY) && in_block(c, st->inst))
+    return nul(FAIL(c, "HIT_BOUNDARY", "a constructor boundary cannot eliminate %s before all of its constructors are checked", c->m->families[st->inst].name));
+  if (!val_is(st, OP_SUM) && !val_is(st, OP_UNIT) && !fam)
+    return nul(FAIL(c, "TYPE_MISMATCH", "elim needs a scrutinee of type Sum A B, Unit or a uniform domain family of points and 1-dimensional paths, found a motive on %s", show(c, st)));
+  want = fam ? c->m->families[st->inst].ctor_count : val_is(st, OP_SUM) ? 2u : 1u;
   if (k->argc < want + 2u)
     return nul(FAIL(c, "TYPE_MISMATCH", "elim on %s needs a motive, %u cases and a scrutinee", show(c, st), want));
+  cores = arena_alloc(c->m->arena, ((size_t)want + 2u) * sizeof *cores);
+  if (cores == NULL)
+    return nul(FAIL(c, "OOM", "out of memory"));
+  cores[0] = motive;
   s = check(c, k->args[want + 1u], st);
   if (s == NULL)
     return NULL;
   pv = here(c, cores[0]);
-  for (i = 0; i < want && cores[i] != NULL; i++)
-    cores[i + 1u] = check(c, k->args[i + 1u], elim_case(c, pv, st, i));
-  if (cores[want] == NULL)
+  for (i = 0; i < want && cores[i] != NULL; i++) {
+    const Value *ct = fam ? elim_family_case(c, pv, st, cores + 1, i) : elim_case(c, pv, st, i);
+    cores[i + 1u] = ct == NULL ? NULL : check(c, k->args[i + 1u], ct);
+  }
+  if (i < want || cores[want] == NULL)
     return NULL;
   cores[want + 1u] = s;
   k->type = apply_value(c->m, pv, here(c, s));
   k->used = want + 2u;
   return core_op(c, OP_ELIM, want, 0, cores, want + 2u);
+}
+
+/* Printed motives omit binder types. Try arity-compatible scrutinees,
+   checking the whole eliminator so a constructor case cannot masquerade
+   as its scrutinee. Later arguments may apply the eliminator's result. */
+static const Core *rule_elim(Call *k) {
+  Checker *c = k->c;
+  Diag saved = *c->m->diag;
+  Diag failure = saved;
+  uint32_t i;
+  int tried = 0;
+  if (k->args[0]->kind != TERM_LAM || k->args[0]->left != NULL)
+    return elim_at_domain(k, lam_domain(c, k->args[0]));
+  for (i = k->argc; i-- > 2u;) {
+    Checker probe = *c;
+    Call candidate = *k;
+    const Value *st = NULL;
+    const Core *out;
+    candidate.c = &probe;
+    if (try_infer(&probe, k->args[i], &st) == NULL
+        || !(val_is(st, OP_UNIT) ? i == 2u : val_is(st, OP_SUM) ? i == 3u
+             : elim_family(c->m, st) && c->m->families[st->inst].ctor_count + 1u == i))
+      continue;
+    out = elim_at_domain(&candidate, st);
+    if (out != NULL) {
+      *c = probe;
+      candidate.c = c;
+      *k = candidate;
+      return out;
+    }
+    if (!tried)
+      failure = *c->m->diag;
+    tried = 1;
+    *c->m->diag = saved;
+  }
+  if (tried) {
+    *c->m->diag = failure;
+    return NULL;
+  }
+  return elim_at_domain(k, NULL);
 }
 
 static const Core *rule_pure(Call *k) {
@@ -973,6 +1145,12 @@ static const Core *fold_simple(Call *k, const Core *s, const Value *st) {
    level c->level + k, its type at the parameters ENV and the earlier
    fields (S4 item 13). A path field `Path F x y` arrives folded, so its
    type is `Path RES x' y'` (S4 item 14). */
+/* The folded type of a recursive field of type T: the target of its sort
+   in a block fold (S6), else RES. */
+static const Value *sort_res(const Checker *c, const Core *t, const Value *res) {
+  return c->fold_targets != NULL && t != NULL && t->kind == CORE_OP && t->op == OP_FAMILY && t->inst >= c->fold_first && t->inst - c->fold_first < c->fold_count ? c->fold_targets[t->inst - c->fold_first] : res;
+}
+
 static const Core *case_fields(Checker *c, const CtorInfo *ctor, const Env *env, const Value *res, const Core *body) {
   Machine *m = c->m;
   uint32_t n = ctor->field_count;
@@ -986,9 +1164,11 @@ static const Core *case_fields(Checker *c, const CtorInfo *ctor, const Env *env,
   for (i = 0; i < n; i++) {
     const FieldInfo *field = &ctor->fields[i];
     uint32_t at = c->level + i;
-    if (field->over_recursive && !field->path)
+    /* A recursive field at an index over an earlier recursive field (S6)
+       arrives folded: the fold is not dependent, so the index goes. */
+    if (field->over_recursive && !field->path && !field->recursive)
       return nul(FAIL(c, "HIT_BOUNDARY", "the fold of %s has no case type for the field %s: a field over an earlier recursive field must be Path F x y, with x and y earlier recursive fields", ctor->name, field->name));
-    types[i] = field->path ? core_ends(c, CORE_PATHP, "_", NULL, quote_value(m, at + 1u, res), quote_value(m, at, val_var(m, c->level + field->ends[0])), quote_value(m, at, val_var(m, c->level + field->ends[1]))) : quote_value(m, at, field->recursive ? res : eval_core(m, env, field->type));
+    types[i] = field->path ? core_ends(c, CORE_PATHP, "_", NULL, quote_value(m, at + 1u, sort_res(c, field->type->b, res)), quote_value(m, at, val_var(m, c->level + field->ends[0])), quote_value(m, at, val_var(m, c->level + field->ends[1]))) : quote_value(m, at, field->recursive ? sort_res(c, field->type, res) : eval_core(m, env, field->type));
     env = env_push(m, env, val_var(m, c->level + i));
     if (types[i] == NULL || env == NULL)
       return NULL;
@@ -1012,6 +1192,8 @@ static const Value *case_type(Checker *c, const CtorInfo *ctor, const Env *env, 
 static const Value *fold_image(Checker *c, uint32_t fam, const Core *const *cores, uint32_t done, const Value *v, const Env *env, uint32_t level) {
   Machine *m = c->m;
   const FamilyInfo *f = &m->families[fam];
+  /* The constructor slots of a block are contiguous (S6). */
+  uint32_t base = m->families[f->block_first].first_ctor;
   const CtorInfo *ci;
   const Value *acc;
   uint32_t i;
@@ -1023,10 +1205,10 @@ static const Value *fold_image(Checker *c, uint32_t fam, const Core *const *core
      the same level, and its ends are earlier recursive fields. */
   if (v->kind == VAL_PAPP && v->dom != NULL && v->dom->kind == VAL_VAR && v->dom->nat >= c->level)
     return v;
-  if (!val_is(v, OP_CTOR) || v->inst < f->first_ctor || v->inst - f->first_ctor >= done || m->ctors[v->inst].interval_count != 0u)
+  if (!val_is(v, OP_CTOR) || v->inst < base || v->inst - base >= done || m->ctors[v->inst].interval_count != 0u)
     return vnul(FAIL(c, "HIT_BOUNDARY", "the fold cannot map the boundary term %s: a boundary term must be a field, a path field at an interval, or an earlier point constructor", show(c, v)));
   ci = &m->ctors[v->inst];
-  acc = here(c, cores[v->inst - f->first_ctor]);
+  acc = here(c, cores[v->inst - base]);
   for (i = 0; i < ci->field_count && acc != NULL; i++) {
     const FieldInfo *field = &ci->fields[i];
     const Value *arg = v->args[f->param_count + i];
@@ -1050,7 +1232,7 @@ static const Value *fold_image(Checker *c, uint32_t fam, const Core *const *core
 static const Value *case_image(Checker *c, uint32_t inst, const Value *st, const Core *const *cores, uint32_t done, const Value *r0, const Value *r1, uint32_t level) {
   Machine *m = c->m;
   const CtorInfo *ctor = &m->ctors[inst];
-  uint32_t p = st->argc;
+  uint32_t p = m->families[ctor->family].param_count;
   uint32_t n = ctor->field_count;
   uint32_t d = ctor->interval_count;
   const Value **a = arena_alloc(m->arena, ((size_t)p + n + d) * sizeof *a);
@@ -1109,7 +1291,7 @@ static const Core *square_type(Checker *c, uint32_t inst, const Value *st, const
 static const Value *path_case_type(Checker *c, uint32_t inst, const Value *st, const Value *res, const Core *const *cores, uint32_t done) {
   Machine *m = c->m;
   const CtorInfo *ctor = &m->ctors[inst];
-  const Env *env = env_of(c, st->args, st->argc);
+  const Env *env = env_of(c, st->args, m->families[ctor->family].param_count);
   uint32_t l = c->level + ctor->field_count;
   const Core *ends[2];
   const Core *t;
@@ -1129,7 +1311,7 @@ static const Core *fold_family(Call *k, const Core *s, const Value *st) {
   Checker *c = k->c;
   Machine *m = c->m;
   const FamilyInfo *f = &m->families[st->inst];
-  const Env *env = env_of(c, st->args, st->argc);
+  const Env *env = env_of(c, st->args, f->param_count);
   const Value *res = k->hint;
   const Core **cores = arena_alloc(m->arena, ((size_t)f->ctor_count + 2u) * sizeof *cores);
   uint32_t j;
@@ -1157,6 +1339,79 @@ static const Core *fold_family(Call *k, const Core *s, const Value *st) {
   return core_op(c, OP_FOLD_FAMILY, st->inst, 0, cores, f->ctor_count + 2u);
 }
 
+/* The case of the constructor slot J of the block fold of ST into the
+   TARGETS of the sorts from FIRST (S6). The constructor slots start at
+   BASE; CORES holds the TOTAL cases. */
+static int block_case(Call *k, const Value *st, const Value *const *targets, uint32_t first, uint32_t base, const Core **cores, uint32_t total, uint32_t j) {
+  Checker *c = k->c;
+  Machine *m = c->m;
+  const CtorInfo *ctor = &m->ctors[base + j];
+  const Value *res = targets[ctor->family - first];
+  const Value *ct;
+  c->fold_targets = targets;
+  c->fold_first = first;
+  c->fold_count = m->families[first].block_count;
+  ct = ctor->interval_count == 0u ? case_type(c, ctor, env_of(c, st->args, m->families[first].param_count), res) : path_case_type(c, base + j, st, res, cores, total);
+  c->fold_targets = NULL;
+  cores[j] = ct == NULL ? NULL : check(c, k->args[c->fold_count + j], ct);
+  return cores[j] != NULL;
+}
+
+/* fold T1 .. Tn case... x over a block of n sorts (S6): one target type
+   for each sort, then one case for each constructor of each sort in slot
+   order, then x. A recursive field of a sort arrives folded at the target
+   of that sort. The point cases are checked first, so a boundary can name
+   a point constructor of a later sort. The core holds the cases, the n
+   targets, the target of x and x. */
+static const Core *fold_block(Call *k, const Core *s, const Value *st) {
+  Checker *c = k->c;
+  Machine *m = c->m;
+  const FamilyInfo *f = &m->families[st->inst];
+  uint32_t first = f->block_first;
+  uint32_t n = f->block_count;
+  const FamilyInfo *last = &m->families[first + n - 1u];
+  uint32_t base = m->families[first].first_ctor;
+  uint32_t total = last->first_ctor + last->ctor_count - base;
+  const Value **targets = arena_alloc(m->arena, (size_t)n * sizeof *targets);
+  const Core **cores = arena_alloc(m->arena, ((size_t)total + n + 2u) * sizeof *cores);
+  uint32_t j;
+  int pass;
+  if (targets == NULL || cores == NULL)
+    return nul(FAIL(c, "OOM", "out of memory"));
+  if (k->argc != n + total + 1u)
+    return nul(FAIL(c, "TYPE_MISMATCH", "fold over the block of %s needs %u target types, one case for each of its %u constructors, and the value; found %u arguments", f->name, (unsigned)n, (unsigned)total, (unsigned)k->argc));
+  /* Every case is instantiated with the scrutinee's parameters. Check
+     that those parameters inhabit the telescope of every block sort. */
+  for (j = 0; j < n; j++) {
+    const FamilyInfo *sort = &m->families[first + j];
+    uint32_t p;
+    if (sort->param_count != f->param_count)
+      return nul(FAIL(c, "TYPE_MISMATCH", "fold over the block of %s needs the same parameter telescope for every sort", f->name));
+    for (p = 0; p < f->param_count; p++) {
+      const Env *env = env_of(c, st->args, p);
+      if (!expect(c, eval_core(m, env, f->param_types[p]), eval_core(m, env, sort->param_types[p])))
+        return NULL;
+    }
+  }
+  memset(cores, 0, ((size_t)total + n + 2u) * sizeof *cores);
+  for (j = 0; j < n; j++) {
+    uint64_t level = 0;
+    cores[total + j] = check_type(c, k->args[j], &level);
+    targets[j] = cores[total + j] == NULL ? NULL : here(c, cores[total + j]);
+    if (targets[j] == NULL)
+      return NULL;
+  }
+  for (pass = 0; pass < 2; pass++)
+    for (j = 0; j < total; j++)
+      if ((m->ctors[base + j].interval_count != 0u) == (pass == 1) && !block_case(k, st, targets, first, base, cores, total, j))
+        return NULL;
+  cores[total + n] = cores[total + (st->inst - first)];
+  cores[total + n + 1u] = s;
+  k->used = n + total + 1u;
+  k->type = targets[st->inst - first];
+  return core_op(c, OP_FOLD_FAMILY, st->inst, 0, cores, total + n + 2u);
+}
+
 static int simple_scrutinee(const Value *t) {
   return val_is(t, OP_NAT) || val_is(t, OP_LIST);
 }
@@ -1167,9 +1422,17 @@ static const Core *rule_fold(Call *k) {
   const Value *st = NULL;
   const Core *s = try_infer(c, k->args[k->argc - 1u], &st);
   uint32_t fam = val_is(st, OP_FAMILY) ? st->inst : NO_FAMILY;
-  if (s != NULL && fam != NO_FAMILY && c->m->families[fam].ctor_count + 1u == k->argc) {
-    if (c->m->families[fam].first_ctor + c->m->families[fam].ctor_count > c->m->ctor_count)
+  if (s != NULL && fam != NO_FAMILY) {
+    /* The constructor slots of a block are reserved before its
+       constructors are checked (S6), so the test is the block. */
+    if (in_block(c, fam))
       return nul(FAIL(c, "HIT_BOUNDARY", "a constructor boundary cannot fold %s before all of its constructors are checked", c->m->families[fam].name));
+    if (c->m->families[fam].block_count > 1u) {
+      k->hint = k->outer;
+      return fold_block(k, s, st);
+    }
+  }
+  if (s != NULL && fam != NO_FAMILY && c->m->families[fam].ctor_count + 1u == k->argc) {
     k->hint = k->outer;
     return fold_family(k, s, st);
   }
@@ -1996,11 +2259,14 @@ static const Core *rule(Call *k) {
   return NULL;
 }
 
-/* Checks the family parameters ARGS. VALS gets their values. */
-static int check_params(Checker *c, const FamilyInfo *f, const Term *const *args, const Core **cores, const Value **vals) {
+/* Checks the first N family arguments ARGS: the parameters, then the
+   indices (S6), each at the values of the arguments before it. VALS gets
+   their values. */
+static int check_params(Checker *c, const FamilyInfo *f, uint32_t n, const Term *const *args, const Core **cores, const Value **vals) {
   uint32_t i;
-  for (i = 0; i < f->param_count; i++) {
-    cores[i] = check(c, args[i], eval_core(c->m, env_of(c, vals, i), f->param_types[i]));
+  for (i = 0; i < n; i++) {
+    const Core *t = i < f->param_count ? f->param_types[i] : f->index_types[i - f->param_count];
+    cores[i] = check(c, args[i], eval_core(c->m, env_of(c, vals, i), t));
     vals[i] = here(c, cores[i]);
     if (vals[i] == NULL)
       return 0;
@@ -2011,14 +2277,15 @@ static int check_params(Checker *c, const FamilyInfo *f, const Term *const *args
 static const Core *family_app(Call *k, uint32_t fam) {
   Checker *c = k->c;
   const FamilyInfo *f = &c->m->families[fam];
-  const Core **cores = arena_alloc(c->m->arena, ((size_t)f->param_count + 1u) * sizeof *cores);
-  const Value **vals = arena_alloc(c->m->arena, ((size_t)f->param_count + 1u) * sizeof *vals);
+  uint32_t n = f->param_count + f->index_count;
+  const Core **cores = arena_alloc(c->m->arena, ((size_t)n + 1u) * sizeof *cores);
+  const Value **vals = arena_alloc(c->m->arena, ((size_t)n + 1u) * sizeof *vals);
   if (cores == NULL || vals == NULL)
     return nul(FAIL(c, "OOM", "out of memory"));
-  if (!check_params(c, f, k->args, cores, vals))
+  if (!check_params(c, f, n, k->args, cores, vals))
     return NULL;
   k->type = val_univ(c->m, f->universe);
-  return core_op(c, OP_FAMILY, fam, 0, cores, f->param_count);
+  return core_op(c, OP_FAMILY, fam, 0, cores, n);
 }
 
 /* A constructor takes the family parameters (the indices), then its fields,
@@ -2031,12 +2298,12 @@ static const Core *ctor_app(Call *k, uint32_t ctor) {
   uint32_t q = p + ci->field_count;
   uint32_t n = q + ci->interval_count;
   const Core **cores = arena_alloc(c->m->arena, ((size_t)n + 1u) * sizeof *cores);
-  const Value **vals = arena_alloc(c->m->arena, ((size_t)p + 1u) * sizeof *vals);
+  const Value **vals = arena_alloc(c->m->arena, ((size_t)p + f->index_count + 1u) * sizeof *vals);
   const Env *env;
   uint32_t j;
   if (cores == NULL || vals == NULL)
     return nul(FAIL(c, "OOM", "out of memory"));
-  if (!check_params(c, f, k->args, cores, vals))
+  if (!check_params(c, f, p, k->args, cores, vals))
     return NULL;
   env = env_of(c, vals, p);
   /* Field j is checked at the parameters and the earlier field values. */
@@ -2053,7 +2320,13 @@ static const Core *ctor_app(Call *k, uint32_t ctor) {
     if (cores[j] == NULL)
       return NULL;
   }
-  k->type = val_op(c->m, VAL_OP, OP_FAMILY, ci->family, 0, vals, p);
+  /* The result indices at the parameters and the field values (S6). */
+  for (j = 0; ci->result != NULL && j < f->index_count; j++) {
+    vals[p + j] = eval_core(c->m, env, ci->result[j]);
+    if (vals[p + j] == NULL)
+      return NULL;
+  }
+  k->type = val_op(c->m, VAL_OP, OP_FAMILY, ci->family, 0, vals, ci->result == NULL ? p : p + f->index_count);
   return core_op(c, OP_CTOR, ctor, 0, cores, n);
 }
 
@@ -2071,7 +2344,7 @@ static const Core *proj_app(Call *k, uint32_t ctor, uint32_t field) {
     return nul(FAIL(c, "TYPE_MISMATCH", "%s needs a value of the family %s, found a term of type %s", ci->fields[field].name, c->m->families[ci->family].name, show(c, xt)));
   /* The field type at the parameters and the projections of the earlier
      fields of X (S4 item 13), as the second part of a Sigma. */
-  env = env_of(c, xt->args, xt->argc);
+  env = env_of(c, xt->args, c->m->families[ci->family].param_count);
   for (i = 0; i < field; i++) {
     const Value *fv = here(c, core_op(c, OP_PROJ, ctor, i, &x, 1));
     env = fv == NULL ? NULL : env_push(c->m, env, fv);
@@ -2090,12 +2363,13 @@ static int find_known(Checker *c, const char *name, Head *h) {
     if (strcmp(m->families[i].name, name) == 0) {
       h->kind = HEAD_FAMILY;
       h->index = i;
-      c->self_uses += i == c->self;
+      c->self_uses += in_block(c, i);
       return 1;
     }
   }
   for (i = 0; i < m->ctor_count; i++) {
-    if (strcmp(m->ctors[i].name, name) == 0) {
+    /* A reserved slot of a block has no name yet (S6). */
+    if (m->ctors[i].name != NULL && strcmp(m->ctors[i].name, name) == 0) {
       h->kind = HEAD_CTOR;
       h->index = i;
       return 1;
@@ -2188,7 +2462,7 @@ static uint32_t known_arity(const Checker *c, const Head *h) {
   case HEAD_TERM:
     return 0u;
   case HEAD_FAMILY:
-    return c->m->families[h->index].param_count;
+    return c->m->families[h->index].param_count + c->m->families[h->index].index_count;
   case HEAD_CTOR:
     return ci == NULL ? 0u : c->m->families[ci->family].param_count + ci->field_count + ci->interval_count;
   case HEAD_PROJ:
@@ -2275,7 +2549,7 @@ static const Core *var_core(Checker *c, const char *name, const Value **type) {
     *type = s->type;
     if (s->level >= c->field_base && s->level < c->field_top) {
       c->field_dep = 1;
-      c->field_rec |= val_is(s->type, OP_FAMILY) && s->type->inst == c->self;
+      c->field_rec |= val_is(s->type, OP_FAMILY) && in_block(c, s->type->inst);
     }
     return core_index(c, CORE_VAR, c->level - 1u - s->level);
   }
@@ -2297,7 +2571,7 @@ static const Core *apply_known(Checker *c, const Term *whole, const Head *h, con
   Call k;
   const Core *core;
   if (h->kind == HEAD_BUILTIN && h->builtin->rule == RULE_ELIM && argc == 3u &&
-      hint != NULL && hint->kind == VAL_PI && val_is(elim_domain(c, args, argc), OP_SUM))
+      hint != NULL && hint->kind == VAL_PI && val_is(lam_domain(c, args[0]), OP_SUM))
     return eta(c, whole, hint, type);
   if (argc < arity && hint != NULL && hint->kind == VAL_PI)
     return eta(c, whole, hint, type);
@@ -2574,7 +2848,7 @@ static const char *name_owner(const Checker *c, const char *name) {
       if (strcmp(m->ctors[i].fields[j].name, name) == 0)
         return "a domain field";
     }
-    if (strcmp(m->ctors[i].name, name) == 0)
+    if (m->ctors[i].name != NULL && strcmp(m->ctors[i].name, name) == 0)
       return m->ctors[i].event ? "an event" : "a domain constructor";
   }
   i = find_def(m, name);
@@ -2588,13 +2862,16 @@ static int name_free(Checker *c, const char *name) {
   return why == NULL ? 1 : FAIL(c, "REFUSE_NAME", "%s is %s (rule R4)", name, why);
 }
 
-/* T is the family FAM at its own parameter variables `F p1 .. pn`, in
-   the context of the parameters and SHIFT earlier fields (S4 items 9
-   and 13). */
+/* T is a sort of the block of FAM at the parameter variables of FAM
+   `F p1 .. pn`, then any index arguments (S6), in the context of the
+   parameters and SHIFT earlier fields (S4 items 9 and 13). */
 static int own_family(const Machine *m, uint32_t fam, const Core *t, uint32_t shift) {
-  uint32_t p = m->families[fam].param_count;
+  const FamilyInfo *f = &m->families[fam];
+  uint32_t p = f->param_count;
   uint32_t k;
-  if (t->kind != CORE_OP || t->op != OP_FAMILY || t->inst != fam || t->argc != p)
+  if (t->kind != CORE_OP || t->op != OP_FAMILY || t->inst < f->block_first || t->inst - f->block_first >= f->block_count)
+    return 0;
+  if (m->families[t->inst].param_count != p || t->argc != p + m->families[t->inst].index_count)
     return 0;
   for (k = 0; k < p; k++)
     if (t->args[k]->kind != CORE_VAR || t->args[k]->index != p - 1u - k + shift)
@@ -2676,13 +2953,35 @@ static const Term *cover_term(Checker *c, const Ctor *ctor, const Term *cover, c
   return cover == NULL || ends == NULL ? ends : made_term(c, ctor, TERM_IJOIN, NULL, cover, ends);
 }
 
+/* A branch of a path constructor of the indexed sort FAM failed (S6). A
+   body of the type FAM at another index is HIT_INDEX (the gate row "a
+   wrong index in a path constructor"), not the TYPE_MISMATCH of the
+   branch check. */
+static int branch_index(Checker *c, uint32_t fam, const Branch *b) {
+  Diag saved = *c->m->diag;
+  const Value *t = NULL;
+  if (c->m->families[fam].index_count == 0u || saved.code == NULL || strcmp(saved.code, "TYPE_MISMATCH") != 0 || b->term == NULL || b->term->right == NULL)
+    return 0;
+  c->m->diag->set = 0;
+  if (infer(c, b->term->right, &t) != NULL && val_is(t, OP_FAMILY) && t->inst == fam) {
+    *c->m->diag = saved;
+    c->m->diag->set = 0;
+    return FAIL(c, "HIT_INDEX", "a boundary term of a path constructor of %s has the type %s, the family at another index", c->m->families[fam].name, show(c, t));
+  }
+  *c->m->diag = saved;
+  return 0;
+}
+
 /* The boundary of CTOR under its fields: the first POINTS fields of CTOR
    (with FIELDS their checked types) and then its interval fields are
-   locals. The family parameters are already locals (check_family). */
-static const Core *boundary_core(Checker *c, uint32_t fam, const Ctor *ctor, const FieldInfo *fields, size_t points) {
+   locals. The family parameters are already locals (check_family). Each
+   branch has the family at the parameters and RESULT, the result indices
+   of CTOR (S6), NULL for a uniform family. */
+static const Core *boundary_core(Checker *c, uint32_t fam, const Ctor *ctor, const FieldInfo *fields, size_t points, const Core *const *result) {
   Machine *m = c->m;
   uint32_t p = m->families[fam].param_count;
-  const Value **params = arena_alloc(m->arena, ((size_t)p + 1u) * sizeof *params);
+  uint32_t q = result == NULL ? p : p + m->families[fam].index_count;
+  const Value **params = arena_alloc(m->arena, ((size_t)q + 1u) * sizeof *params);
   Term *tube = arena_alloc(m->arena, sizeof *tube);
   const Term *cover = NULL;
   const Core *phi;
@@ -2699,13 +2998,19 @@ static const Core *boundary_core(Checker *c, uint32_t fam, const Ctor *ctor, con
   for (j = 0; j < points; j++)
     if (!push(c, fields[j].name, here(c, fields[j].type)))
       return NULL;
+  /* The result indices at the parameters and the point fields (S6). */
+  for (i = p; i < q; i++) {
+    params[i] = here(c, result[i - p]);
+    if (params[i] == NULL)
+      return NULL;
+  }
   for (j = points; j < ctor->field_count; j++) {
     cover = cover_term(c, ctor, cover, ctor->fields[j].name);
     if (cover == NULL || !push_interval(c, ctor->fields[j].name))
       return NULL;
   }
   phi = check(c, cover, interval_type(c));
-  a = quote_value(m, c->level, val_op(m, VAL_OP, OP_FAMILY, fam, 0, params, p));
+  a = quote_value(m, c->level, val_op(m, VAL_OP, OP_FAMILY, fam, 0, params, q));
   if (phi == NULL || a == NULL)
     return NULL;
   tube->kind = TERM_LAM;
@@ -2721,7 +3026,7 @@ static const Core *boundary_core(Checker *c, uint32_t fam, const Ctor *ctor, con
   for (i = 0; i < n; i++) {
     bs[i].body = hcomp_branch(c, NULL, a, &bs[i]);
     if (bs[i].body == NULL)
-      return NULL;
+      return nul(branch_index(c, fam, &bs[i]));
   }
   if (!system_overlaps(c, "_", bs, n))
     return NULL;
@@ -2735,23 +3040,46 @@ static const Core *boundary_core(Checker *c, uint32_t fam, const Ctor *ctor, con
    (SYSTEM_OVERLAP). The core is OP_SYSTEM, each body under a path binder
    that no term can use, as an hcomp tube. The context comes back as it
    was. */
-static const Core *check_boundary(Checker *c, uint32_t fam, const Ctor *ctor, const FieldInfo *fields, size_t points) {
+static const Core *check_boundary(Checker *c, uint32_t fam, const Ctor *ctor, const FieldInfo *fields, size_t points, const Core *const *result) {
   const Scope *scope = c->scope;
   const Env *env = c->env;
   uint32_t level = c->level;
-  const Core *sys = boundary_core(c, fam, ctor, fields, points);
+  const Core *sys = boundary_core(c, fam, ctor, fields, points, result);
   c->scope = scope;
   c->env = env;
   c->level = level;
   return sys;
 }
 
+/* The result `: F params indices` of CTOR under its POINTS point fields
+   (S6). A constructor of an indexed sort states it: its head is the sort
+   at its own parameters, and its index arguments check against the index
+   telescope. A constructor of a uniform sort can state the sort at its
+   parameters. RESULT gets the index cores, or NULL. */
+static int ctor_result(Checker *c, uint32_t fam, const Ctor *ctor, uint32_t points, const Core *const **result) {
+  const FamilyInfo *f = &c->m->families[fam];
+  uint64_t level = 0;
+  const Core *t;
+  *result = NULL;
+  if (ctor->result == NULL)
+    return f->index_count == 0u ? 1 : FAIL(c, "HIT_INDEX", "the constructor %s of the indexed family %s needs a result `: %s ...` after its fields", ctor->name, f->name, f->name);
+  t = check_type(c, ctor->result, &level);
+  if (t == NULL)
+    return 0;
+  if (!own_family(c->m, fam, t, points) || t->inst != fam)
+    return FAIL(c, "HIT_INDEX", "the result of %s must be %s at its own parameters", ctor->name, f->name);
+  *result = f->index_count == 0u ? NULL : t->args + f->param_count;
+  return 1;
+}
+
 /* A constructor takes point fields, then (a path constructor) 1 or 2
-   interval fields `(i : I)` and a boundary. */
-static int check_ctor(Checker *c, uint32_t fam, const Ctor *ctor) {
+   interval fields `(i : I)` and a boundary. It fills the reserved slot
+   SLOT (S6). */
+static int check_ctor(Checker *c, uint32_t fam, const Ctor *ctor, uint32_t slot) {
   Machine *m = c->m;
   FieldInfo *fields = arena_alloc(m->arena, (ctor->field_count + 1u) * sizeof *fields);
-  CtorInfo *ci = &m->ctors[m->ctor_count];
+  CtorInfo *ci = &m->ctors[slot];
+  const Core *const *result = NULL;
   const Scope *scope = c->scope;
   const Env *env = c->env;
   uint32_t level = c->level;
@@ -2782,6 +3110,8 @@ static int check_ctor(Checker *c, uint32_t fam, const Ctor *ctor) {
       return 0;
     points += !interval;
   }
+  if (!ctor_result(c, fam, ctor, (uint32_t)points, &result))
+    return 0;
   c->scope = scope;
   c->env = env;
   c->level = level;
@@ -2794,7 +3124,7 @@ static int check_ctor(Checker *c, uint32_t fam, const Ctor *ctor) {
   if (points == ctor->field_count && ctor->boundary != NULL)
     return FAIL(c, "DOMAIN_FAMILY", "%s has a boundary but no interval field; only a path constructor has a boundary", ctor->name);
   if (ctor->boundary != NULL) {
-    boundary = check_boundary(c, fam, ctor, fields, points);
+    boundary = check_boundary(c, fam, ctor, fields, points, result);
     if (boundary == NULL)
       return 0;
   }
@@ -2805,7 +3135,7 @@ static int check_ctor(Checker *c, uint32_t fam, const Ctor *ctor) {
   ci->event = 0;
   ci->interval_count = (uint32_t)(ctor->field_count - points);
   ci->boundary = boundary;
-  m->ctor_count++;
+  ci->result = result;
   return 1;
 }
 
@@ -2853,6 +3183,7 @@ static int check_event(Checker *c, uint32_t fam, const Decl *d) {
   ci->event = 1;
   ci->interval_count = 0u;
   ci->boundary = NULL;
+  ci->result = NULL;
   m->ctor_count++;
   m->families[fam].ctor_count++;
   return 1;
@@ -2872,34 +3203,154 @@ static int check_events(Checker *c, uint32_t fam) {
   return 1;
 }
 
-/* A family is in scope in its own fields, so a field can be recursive. */
-static int check_family(Checker *c, const Decl *d) {
+static int kernel_sig(Checker *c, const Decl *d);
+
+/* T has a free variable NAME. A local binder can shadow a block sort. */
+static int names_var(const Term *t, const char *name) {
+  if (t == NULL)
+    return 0;
+  if (t->kind == TERM_VAR && t->name != NULL && strcmp(t->name, name) == 0)
+    return 1;
+  if (names_var(t->left, name))
+    return 1;
+  if ((t->kind == TERM_PI || t->kind == TERM_LAM || t->kind == TERM_SIGMA) && t->name != NULL && strcmp(t->name, name) == 0)
+    return 0;
+  return names_var(t->right, name);
+}
+
+/* The header of the sort S of the block FIRST of COUNT sorts names no
+   sort from S on (S6): its parameters and its index telescope can name
+   only the earlier sorts (BLOCK_ORDER). */
+static int header_order(Checker *c, const Decl *first, uint32_t s, uint32_t count) {
+  const Decl *d = &first[s];
+  uint32_t t;
+  size_t i;
+  for (t = s; t < count; t++) {
+    int named = 0;
+    for (i = 0; i < d->param_count; i++) {
+      named |= names_var(d->params[i].type, first[t].name);
+      if (strcmp(d->params[i].name, first[t].name) == 0)
+        break;
+    }
+    if (i == d->param_count)
+      named |= names_var(d->index, first[t].name);
+    if (named)
+      return FAIL(c, "BLOCK_ORDER", "the header of %s names the block sort %s; a header can name only the earlier sorts of its block", d->name, first[t].name);
+  }
+  return 1;
+}
+
+/* The header of the block sort D as the family FAM of the block FIRST of
+   COUNT sorts (S6): the parameters, then the index telescope `T1 -> ...
+   -> Type 0`, in an empty context. Prop and SProp are not types there
+   (NAME_UNKNOWN, rule R4). The constructor slots of D are reserved here,
+   so the constructors of a sort stay contiguous. */
+static int check_header(Checker *c, const Decl *d, uint32_t fam, uint32_t first, uint32_t count, uint64_t universe) {
   Machine *m = c->m;
-  uint32_t fam = m->family_count;
   FamilyInfo *f = &m->families[fam];
   const Core **params = arena_alloc(m->arena, (d->param_count + 1u) * sizeof *params);
+  const Core **indices;
+  const Term *t;
+  uint32_t n = 0;
   size_t i;
-  if (params == NULL)
+  for (t = d->index; t != NULL && t->kind == TERM_PI; t = t->right)
+    n++;
+  indices = arena_alloc(m->arena, ((size_t)n + 1u) * sizeof *indices);
+  if (params == NULL || indices == NULL)
     return FAIL(c, "OOM", "out of memory");
+  c->scope = NULL;
+  c->env = NULL;
+  c->level = 0;
   for (i = 0; i < d->param_count; i++) {
     uint64_t level = 0;
     params[i] = check_type(c, d->params[i].type, &level);
     if (params[i] == NULL || !push(c, d->params[i].name, here(c, params[i])))
       return 0;
   }
+  for (t = d->index, i = 0; t != NULL && t->kind == TERM_PI; t = t->right, i++) {
+    uint64_t level = 0;
+    indices[i] = check_type(c, t->left, &level);
+    if (indices[i] == NULL || !push(c, t->name == NULL ? "_" : t->name, here(c, indices[i])))
+      return 0;
+  }
+  if (t != NULL && (t->kind != TERM_UNIV || t->nat != 0u))
+    return FAIL(c, "TYPE_MISMATCH", "the index telescope of %s must end in Type 0", d->name);
   f->name = d->name;
   f->param_types = params;
   f->param_count = (uint32_t)d->param_count;
+  f->index_types = indices;
+  f->index_count = n;
+  f->block_first = first;
+  f->block_count = count;
   f->first_ctor = m->ctor_count;
   f->ctor_count = (uint32_t)d->ctor_count;
+  f->universe = universe;
   f->origin = d->origin;
-  m->family_count++;
-  c->self = fam;
   for (i = 0; i < d->ctor_count; i++) {
-    if (!check_ctor(c, fam, &d->ctors[i]))
-      return 0;
+    memset(&m->ctors[m->ctor_count + i], 0, sizeof m->ctors[0]);
+    m->ctors[m->ctor_count + i].family = fam;
   }
-  return d->origin != ORIGIN_PROGRAM && strcmp(d->name, "Out") == 0 ? check_events(c, fam) : 1;
+  m->ctor_count += (uint32_t)d->ctor_count;
+  m->family_count++;
+  return 1;
+}
+
+/* A block of sorts D[0 .. block_count) (S6); a family outside a block is a
+   block of one. All headers bind first, then the point constructors of
+   all sorts, then the path constructors of all sorts, so a boundary can
+   name a point constructor of a later sort. The sorts of the block are in
+   scope in the fields, so a field can be recursive. */
+static int check_family(Checker *c, const Decl *d) {
+  Machine *m = c->m;
+  uint32_t first = m->family_count;
+  uint32_t count = d->block_count > 0u ? (uint32_t)d->block_count : 1u;
+  uint32_t first_ctor = m->ctor_count;
+  uint64_t *universes = arena_alloc(m->arena, (size_t)count * sizeof *universes);
+  uint32_t s;
+  int pass;
+  if (universes == NULL)
+    return FAIL(c, "OOM", "out of memory");
+  memset(universes, 0, (size_t)count * sizeof *universes);
+  c->self = first;
+  c->self_count = count;
+  /* A later sort can raise the universe of an earlier sort. Recheck
+     headers and constructors until these monotone universe bounds settle,
+     so no core retains an elaboration made at a provisional lower level. */
+  for (;;) {
+    int changed = 0;
+    m->family_count = first;
+    m->ctor_count = first_ctor;
+    for (s = 0; s < count; s++) {
+      m->def = d[s].name;
+      if (s > 0u && (!kernel_sig(c, &d[s]) || !name_free(c, d[s].name)))
+        return 0;
+      if (!header_order(c, d, s, count) || !check_header(c, &d[s], first + s, first, count, universes[s]))
+        return 0;
+    }
+    for (pass = 0; pass < 2; pass++) {
+      for (s = 0; s < count; s++) {
+        const FamilyInfo *f = &m->families[first + s];
+        size_t i;
+        m->def = d[s].name;
+        c->scope = NULL;
+        c->env = NULL;
+        c->level = 0;
+        for (i = 0; i < d[s].param_count; i++)
+          if (!push(c, d[s].params[i].name, here(c, f->param_types[i])))
+            return 0;
+        for (i = 0; i < d[s].ctor_count; i++)
+          if ((d[s].ctors[i].boundary != NULL) == (pass == 1) && !check_ctor(c, first + s, &d[s].ctors[i], f->first_ctor + (uint32_t)i))
+            return 0;
+      }
+    }
+    for (s = 0; s < count; s++) {
+      changed |= universes[s] != m->families[first + s].universe;
+      universes[s] = m->families[first + s].universe;
+    }
+    if (!changed)
+      break;
+  }
+  return d->origin != ORIGIN_PROGRAM && count == 1u && strcmp(d->name, "Out") == 0 ? check_events(c, first) : 1;
 }
 
 /* Rule D-9 (slice K3c). The argument A of the history field K of the state
@@ -3204,8 +3655,8 @@ static int check_state(Checker *c, const Decl *d) {
     return FAIL(c, "REFUSE_STATE", "a program can declare one state only");
   if (strcmp(d->name, "State") != 0)
     return FAIL(c, "REFUSE_STATE", "the state type must have the name State, found %s", d->name);
-  if (d->param_count != 0u || d->ctor_count != 1u)
-    return FAIL(c, "REFUSE_STATE", "the state must have no parameters and one constructor");
+  if (d->param_count != 0u || d->ctor_count != 1u || d->index != NULL)
+    return FAIL(c, "REFUSE_STATE", "the state must have no parameters or index telescope and one constructor");
   if (!name_free(c, d->name) || !check_family(c, d))
     return 0;
   ci = &m->ctors[m->families[m->family_count - 1u].first_ctor];
@@ -3282,9 +3733,13 @@ int check_program(Arena *arena, const DeclList *decls, Machine *m, Diag *diag, C
     c.level = 0;
     c.depth = 0;
     c.self = NO_FAMILY;
+    c.self_count = 0u;
+    c.fold_targets = NULL;
     m->def = decls->items[i].name;
     if (!check_decl(&c, &decls->items[i]))
       return 0;
+    /* The other sorts of a block are checked with its first sort (S6). */
+    i += decls->items[i].kind == DECL_FAMILY && decls->items[i].block_count > 1u ? decls->items[i].block_count - 1u : 0u;
   }
   m->def = NULL;
   return 1;

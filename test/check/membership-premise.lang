@@ -1,0 +1,8 @@
+-- admit needs the premise p : M a = 0. Here m a is 1 (everyone is a
+-- member), so refl is not a path from inr unit to inl unit.
+def Agent : Type 0 := Sum Unit Unit
+def everyone : Agent -> Sum Unit Unit := fun (b : Agent) => inr unit
+def sameAll : (b : Agent) -> Sum (Path Agent b (inr unit)) (Path (Sum Unit Unit) (everyone b) (everyone b)) :=
+  fun (b : Agent) => inr refl
+def again : Path Membership (memberSet everyone) (memberSet everyone) :=
+  fun (i : I) => admit everyone everyone (inr unit) refl refl sameAll i

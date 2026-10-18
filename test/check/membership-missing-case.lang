@@ -1,0 +1,9 @@
+-- elim over Membership needs one case for each constructor: memberSet, admit
+-- and exit. This elim has no exit case (a missing PathP case).
+def Agent : Type 0 := Sum Unit Unit
+def wind : Membership -> S1 :=
+  fun (x : Membership) => elim (fun (y : Membership) => S1)
+    (fun (m : Agent -> Sum Unit Unit) => base)
+    (fun (m : Agent -> Sum Unit Unit) (n : Agent -> Sum Unit Unit) (a : Agent) (p : Path (Sum Unit Unit) (m a) (inl unit))
+      (q : Path (Sum Unit Unit) (n a) (inr unit)) (r : (b : Agent) -> Sum (Path Agent b a) (Path (Sum Unit Unit) (m b) (n b))) =>
+      fun (i : I) => loop i) x

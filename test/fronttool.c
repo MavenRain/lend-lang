@@ -52,7 +52,7 @@ static int kit(const char *text, const char *want) {
   return checked(text, ORIGIN_PROGRAM, CHECK_KIT, want);
 }
 
-static int normal_roundtrip(const char *type, const char *body) {
+static int normal_roundtrip_in(const char *domain_text, const char *type, const char *body) {
   char source[4096];
   char normal[2048];
   Arena arena;
@@ -60,7 +60,7 @@ static int normal_roundtrip(const char *type, const char *body) {
   TokenList tokens = {0};
   DeclList decls = {0};
   Machine machine;
-  snprintf(source, sizeof source, "def value : %s := %s", type, body);
+  snprintf(source, sizeof source, "%s\ndef value : %s := %s", domain_text, type, body);
   arena_init(&arena, (size_t)1 << 24);
   diag_init(&diag);
   int ok = lex_source(&arena, "test-roundtrip", source, strlen(source), &tokens, &diag)
@@ -75,12 +75,44 @@ static int normal_roundtrip(const char *type, const char *body) {
   arena_release(&arena);
   if (!ok)
     return 0;
-  snprintf(source, sizeof source, "def value : %s := %s", type, normal);
+  snprintf(source, sizeof source, "%s\ndef value : %s := %s", domain_text, type, normal);
   return domain(source, NULL);
+}
+
+static int normal_roundtrip(const char *type, const char *body) {
+  return normal_roundtrip_in("", type, body);
 }
 
 int main(void) {
   int ok = 1;
+  /* A boundary cannot eliminate its family before its signatures are complete. */
+  ok &= domain("family SelfElim := selfPoint (selfValue : Nat) "
+               "| selfArc (selfPrevious : SelfElim) (i : I) "
+               "[ ~i -> selfPoint (elim (fun (x : SelfElim) => Nat) (fun n => n) 0 selfPrevious), "
+               "i -> selfPoint 0 ]", "HIT_BOUNDARY");
+  ok &= domain("family Earlier := earlierPoint\n"
+               "family Later := laterPoint (laterValue : Nat) | laterArc (i : I) "
+               "[ ~i -> laterPoint (elim (fun x => Nat) 7 earlierPoint), i -> laterPoint 7 ]", NULL);
+  /* Uniform elimination infers its domain from the scrutinee, not a case. */
+  ok &= domain("family Switch := swOff | swOn\n"
+               "def result : Unit := elim (fun b => Unit) unit unit swOff", NULL);
+  ok &= normal_roundtrip_in("family Switch := swOff | swOn", "Switch -> Unit",
+                            "fun x => elim (fun (b : Switch) => Unit) unit unit x");
+  ok &= normal_roundtrip_in("family Switch := swOff | swOn", "Switch -> Nat -> Nat",
+                            "fun x n => elim (fun (b : Switch) => Nat -> Nat) (fun k => k) (fun k => k) x n");
+  /* An overapplied Unit eliminator can end in a domain-family argument. */
+  ok &= domain("family Switch := swOff | swOn\n"
+               "def result : Unit := elim (fun u => Switch -> Unit) (fun b => unit) unit swOff", NULL);
+  /* Recursive point cases keep each field beside its induction hypothesis. */
+  ok &= domain("family Branching := tipB (payloadB : Nat) | nodeB (leftB : Branching) (rightB : Branching)\n"
+               "def count : Branching -> Nat := fun x => elim (fun (t : Branching) => Nat) "
+               "(fun n => n) (fun l ihl r ihr => natAdd ihl ihr) x\n"
+               "def result : Path Nat (count (nodeB (tipB 2) (tipB 3))) 5 := refl", NULL);
+  ok &= normal_roundtrip_in("family Rope := knotR (valueR : Nat) "
+                            "| joinR (fromR : Rope) (toR : Rope) (i : I) [ ~i -> fromR, i -> toR ]",
+                            "Rope -> Rope",
+                            "fun r => elim (fun (s : Rope) => Rope) "
+                            "(fun n => knotR n) (fun x ihx y ihy => fun (i : I) => joinR ihx ihy i) r");
   /* The empty domain (sealed-lang S2, R21) lexes, parses and checks. */
   ok &= domain("", NULL);
   /* Elimination consumes its scrutinee before applying a functional result. */
@@ -118,6 +150,74 @@ int main(void) {
                "fun x y => fun (i : I) => arcFrom (arc x y i)", "NAME_UNKNOWN");
   ok &= domain("family T := pt (value : Nat) | arc (previous : T) (i : I) "
                "[ ~i -> pt (fold (fun n => n) 1 previous), i -> pt (fold (fun n => n) 1 previous) ]", "HIT_BOUNDARY");
+  /* Indexed families and blocks (S6). hiit-wrong-index: an end of a path
+     constructor is the family at another index. hiit-no-result: a
+     constructor of an indexed family states no result. block-order: a
+     header names a later sort of its block. index-prop: Prop is not a type
+     in an index telescope (rule R4). block-ok: a field names a later sort. */
+  ok &= domain("family Sz := zs | ss (szPrev : Sz)\n"
+               "family V : Sz -> Type 0 := vnil : V zs | vcons (vSize : Sz) (vTail : V vSize) : V (ss vSize) "
+               "| vbad (badSize : Sz) (badTail : V badSize) (i : I) : V (ss badSize) "
+               "[ ~i -> vcons badSize badTail, i -> badTail ]", "HIT_INDEX");
+  ok &= domain("family Sz := zs | ss (szPrev : Sz)\n"
+               "family V : Sz -> Type 0 := vnil | vcons (vSize : Sz) (vTail : V vSize) : V (ss vSize)", "HIT_INDEX");
+  ok &= domain("family P0 : Q0 -> Type 0 := p0 : P0 q0 and Q0 := q0", "BLOCK_ORDER");
+  ok &= domain("family W : Prop -> Type 0 := w0", "NAME_UNKNOWN");
+  ok &= domain("family Ch := gen | adopt (adoptOf : Ch) (adoptBy : Rt adoptOf) "
+               "and Rt : Ch -> Type 0 := rat (ratOf : Ch) : Rt ratOf", NULL);
+  /* Index arguments are not constructor parameters in point or path cases. */
+  ok &= domain("family Sz := zs | ss (pred : Sz)\n"
+               "family V (A : Type 0) : Sz -> Type 0 := vn : V A zs "
+               "| vc (item : A) : V A (ss zs) "
+               "| seg (i : I) : V A zs [ ~i -> vn A, i -> vn A ]\n"
+               "def result : Path Nat (fold 0 (fun a => a) refl (vc Nat 7)) 7 := refl", NULL);
+  /* A transport's printed result must still inhabit the destination fibre. */
+  ok &= normal_roundtrip_in("family Sz := zs | ss (pred : Sz)\n"
+                            "family V (A : Type 0) : Sz -> Type 0 := vn : V A zs",
+                            "V Nat zs", "transp (fun (i : I) => V Nat zs) i0 (vn Nat)");
+  ok &= normal_roundtrip_in("family Sz := zs | ss (pred : Sz) "
+                            "| edge (i : I) [ ~i -> zs, i -> ss zs ]\n"
+                            "family V : Sz -> Type 0 := vn : V zs | vc : V (ss zs)",
+                            "V (ss zs)", "transp (fun (i : I) => V (edge i)) i0 vn");
+  ok &= normal_roundtrip_in("family Even (A : Type 0) := ez | es (oddPrev : Odd A) "
+                            "and Odd (A : Type 0) := os (evenPrev : Even A)",
+                            "Even Nat", "transp (fun (i : I) => Even Nat) i0 (es Nat (os Nat (ez Nat)))");
+  ok &= domain("family Even := ez | es (oddPrev : Odd) and Odd := os (evenPrev : Even)\n"
+               "def result : Nat := fold 0 (fun n => natAdd n 1) (es (os ez))", "TYPE_MISMATCH");
+  /* Block folds print their targets before their constructor cases. */
+  ok &= normal_roundtrip_in("family Even := ez | es (oddPrev : Odd) and Odd := os (evenPrev : Even)",
+                            "Even -> Nat", "fun x => fold Nat Unit 0 (fun u => 1) (fun n => unit) x");
+  ok &= normal_roundtrip_in("family Even := ez | es (oddPrev : Odd) and Odd := os (evenPrev : Even)",
+                            "Odd -> Unit", "fun x => fold Nat Unit 0 (fun u => 1) (fun n => unit) x");
+  ok &= domain("family Even := ez | es (oddPrev : Odd) and Odd := os (evenPrev : Even)\n"
+               "def point : Path Nat (fold Nat Unit 0 (fun u => 1) (fun n => unit) (es (os ez))) 1 := refl\n"
+               "def other : Path Unit (fold Nat Unit 0 (fun u => 1) (fun n => unit) (os ez)) unit := refl", NULL);
+  /* A path field over a sibling sort folds at that sibling. */
+  ok &= domain("family Box := box (boxLeft : Item) (boxRight : Item) (boxPath : Path Item boxLeft boxRight) "
+               "and Item := item\n"
+               "def result : Path Nat 7 7 := fun (i : I) => "
+               "fold Nat Unit (fun x y p => elim (fun (u : Unit) => Nat) 7 (p @ i)) unit (box item item refl)", NULL);
+  /* Every sort's cases must use the scrutinee's parameter telescope. */
+  ok &= domain("family F (A : Type 0) := makeF (fValue : A) and G (n : Nat) := makeG\n"
+               "def result : Unit := fold Unit Unit (fun x => unit) unit (makeG 7)", "TYPE_MISMATCH");
+  ok &= domain("family F (A : Type 0) := makeF (fValue : A) and G := makeG\n"
+               "def result : Unit := fold Unit Unit (fun x => unit) unit makeG", "TYPE_MISMATCH");
+  ok &= domain("family L (A : Type 0) (a : A) := leftL (lValue : A) "
+               "and R (A : Type 0) (a : A) := rightR (rLeft : L A a)\n"
+               "def firstL : Path Nat (fold Nat Unit (fun n => n) (fun n => unit) (leftL Nat 7 8)) 8 := refl\n"
+               "def secondR : Path Unit (fold Nat Unit (fun n => n) (fun n => unit) (rightR Nat 7 (leftL Nat 7 8))) unit := refl", NULL);
+  /* Header folds must not see the zeroed, reserved constructor signatures. */
+  ok &= domain("family A := a (n : Nat) and B (x : A) (y : fold Unit x) := b\n"
+               "def value : B (a 0) unit := b (a 0) unit", "HIT_BOUNDARY");
+  /* A later sort's universe propagates backwards through the block. */
+  ok &= domain("family Low := low (high : High) and High := highCtor (big : Type 0)\n"
+               "def small : Type 0 := Low", "TYPE_MISMATCH");
+  ok &= domain("family Low := low (high : High) and High := highCtor (big : Type 0)\n"
+               "def large : Type 1 := Low", NULL);
+  ok &= domain("family F (A : Type 0) : ((G : Type 0) -> G -> G) -> Type 0 := "
+               "mk (x : (T : Type 0) -> T -> T) : F A x and G := g", NULL);
+  ok &= domain("family F (G : Type 0) : G -> Type 0 := mk (x : G) : F G x and G := g", NULL);
+  ok &= domain("state State : Nat -> Type 0 := st (counter : Nat) : State counter", "REFUSE_STATE");
   ok &= domain("family U := u\n"
                "family T := pt (value : Nat) | arc (i : I) "
                "[ ~i -> pt (fold 0 u), i -> pt (fold 0 u) ]", NULL);
