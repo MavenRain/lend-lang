@@ -1,13 +1,13 @@
 # Validation
 
 Date: 2026-10-18. tcc: 0.9.28rc. evm (go-ethereum): 1.14.12. Host
-executable: `build/langc` at 993ee13.
+executable: `build/langc` at 68ce871 plus the S5 changes.
 
 `make -B check` passes: it builds `langc` and the test tools with tcc,
 runs the clang `-Wall -Wextra -Wswitch-enum -Werror` check, and runs the
-gate scripts. It runs 26 examples, 19 parse refusals, 146 check
-refusals, 22 kit-only refusals, 65 evals, 5 runs, 10 run refusals, 8
-asmtool checks, 3 builds, 15 lower refusals, 32 build checks, 20
+gate scripts. It runs 29 examples, 19 parse refusals, 161 check
+refusals, 22 kit-only refusals, 75 evals, 5 runs, 10 run refusals, 8
+asmtool checks, 3 builds, 16 lower refusals, 33 build checks, 20
 dispatch checks, 43 evm steps, 18 precompile steps, 13 mock rows, 15
 diff rows, 24 emit regressions and the review, domain, path, fuel,
 output, lower and hashing regressions, with zero failures.
@@ -92,3 +92,34 @@ fields and trusted domain declarations. The original mutant loop kills
 (docs/STATUS.md section S4). The staged documentation review repeats the
 loop on 993ee13 with the same results and matching source hashes before
 and after, and a full `make -B check` on that source passes.
+
+The S5 port applies orbit-lang a12973a, which ports Glue, ua, uaBeta
+and hcomp at U from coin-lang (44c917f, 91d7091 and 34acff5, PLAN
+section 8). Glue, glue and unglue
+are guest formers (F17), ua and the equivalences are domain
+definitions, and Fin is internal (O23). The review adds the kit
+examples `equiv`, `glue` and `univ`, 10 evals, 15 check refusals (16
+new rows; `hcomp-universe` goes out, because hcomp at Type 0 is now a
+Glue type), the lower refusal `glue-word` and 10 path regression rows.
+Refusals cover a Fin literal out of range, a failed Fin case, a Glue
+branch that is not an equivalence, a Glue system that does not cover
+its face, a Glue boundary mismatch, unglue on a term of another type, a
+used tube binder, ua of an equivalence equal to refl, uaBeta on a
+neutral equivalence, hcomp at U with a wrong cap, hcomp above Type 0, ua
+on a non-equivalence, a Glue at Prop, two isEquiv proofs or two ua
+proofs that are not convertible, and an hcomp at a word position.
+lend-lang keeps its conv_system of 2449b67 (the covers, then each
+overlap on its face) in place of the orbit-lang S5 conv_system. The
+orbit-lang system conversion path test passes on it. Mutants M1, M2, M4
+to M9, C1 and C2 are killed (10 of 11, 7 admissions). M3 meets a second
+refusal class (PATH_END) (docs/STATUS.md section S5).
+
+The S5 staged review fixes recovery of a cached endpoint that is itself a
+Glue type. A circle fold into `ua G G (idEquiv G)`, with
+`G = Glue (Fin 3) i0 []`, previously used the inner Glue as the line's
+outer structure and produced an ill-typed normal form containing
+`unglue 0`. The new C regression fails with PATH_END on the original
+evaluator and passes with generic line metadata retained for endpoint
+recovery. All 44 path regressions and `make -B check` pass after the fix.
+Additional checks cover reversed and reparameterized univalence paths,
+transport between Fin 1 and Unit, and compositions at nested Glue types.

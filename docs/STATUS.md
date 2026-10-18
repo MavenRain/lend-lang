@@ -423,3 +423,95 @@ mutants and the records are built by hand.
 |---|---|---|
 | 1 (port) | req_011Cg9C2NqbCP9jH4Baoyh7o | req_011Cg9C5T7u3seuat8mYPr2E |
 | 2 (records) | req_011Cg9HyC5ZJvfdiGSiWPMCQ | req_011Cg9JH3RfDR42Tgz8EYv17 |
+
+## S5
+
+S5 ports orbit-lang a12973a (Glue, ua, uaBeta, hcomp at Glue and U;
+orbit-lang ports them from coin-lang 44c917f, 91d7091 and 34acff5) on
+68ce871, the USER S4 records commit on 993ee13.
+
+### Counts
+
+| Gate line | lend-lang S4 | orbit-lang S5 | lend-lang S5 |
+|---|---|---|---|
+| examples | 26 | 29 | 29 |
+| parse refusals | 19 | 19 | 19 |
+| check refusals | 146 | 147 | 161 |
+| kit-only refusals | 22 | 22 | 22 |
+| evals | 65 | 75 | 75 |
+| runs, run refusals | 5, 10 | 5, 10 | 5, 10 |
+| asmtool checks | 8 | 8 | 8 |
+| builds | 3 | 3 | 3 |
+| lower refusals | 15 | 16 | 16 |
+| build checks | 32 | 33 | 33 |
+| dispatch | 20 | 20 | 20 |
+
+Each lend-lang S5 delta equals the orbit-lang S4 to S5 delta: 3 examples
+(equiv, glue, univ), 15 check refusals (16 new rows; hcomp-universe goes
+out, because hcomp at Type 0 is now a Glue type), 10 evals, 1 lower
+refusal (glue-word) and 1 build check. The other counts (evm steps 43
+and the rest) equal S4. The lend-lang check count stays above the
+orbit-lang count by the lend-lang signature and Prop rows of S3 and S4.
+
+### Port
+
+The patch is `git -C ~/Documents/orbit-lang diff 9e28399 a12973a -- .`
+without docs/PLAN.md, README.md, design and docs/STATUS.md: 38 files, 83
+hunks, +1527 -76. `git apply --3way` gives the same 5 conflict files in
+a scratch clone and in the repo, and 0 other conflicts.
+
+| File | Hunks | Resolution |
+|---|---|---|
+| src/front/eval.c | 2 | the lend-lang conv_system, conv_branches and mark_intervals (2449b67) stay; the orbit-lang S5 conv_system goes out; conv_loop keeps one call |
+| test/pathtool.c | 3 | both sides stay: the lend-lang `rejected` helper and 5 system rows, the orbit-lang `print_refused`, `accepts`, `system_conversion` and rows |
+| SPEC.md | 1 | the lend-lang name, F1 to F17 |
+| examples/orbit.lang | 1 | the lend-lang `agreeFlipped` (actObj) stays; the orbit-lang S5 lines flipEquiv to gElim are added |
+| docs/VALIDATION.md | 2 | the lend-lang counts and paragraphs stay; the S5 paragraph is adapted |
+
+Adaptation: no added line uses act, Member, Group or Outcome, thus the
+new files need no name change. The S5 changes to src/front/check.c do
+not touch the SIGNATURE table, and the new domain/domain.lang
+definitions pass the lend-lang signature check. The orbit-lang S5
+conv_system compares branch values without the face. The lend-lang
+rule (USER review fix of 2449b67) compares the covers, then each overlap
+on its face. The orbit-lang system_conversion test (order, values,
+coverage, refinement) passes on the lend-lang rule.
+
+### Mutants
+
+~/Documents/lend-lang-work/S5-mutants.{sh,log}. The script is the
+orbit-lang S5 script (M1 to M9) with the lend-lang paths. mut() needs
+build/langc and build/fronttool newer than the mutant, with `make -B`
+per build. Two lend-lang mutants (C1, C2) attack conv_system, where the
+lend-lang delta meets the S5 system_conversion test. Before the run,
+`rg -c -F` found each anchor once in lend-lang, at the same line as in
+orbit-lang a12973a, thus no anchor needs a retarget (the orbit-lang log
+predates the a12973a commit, the S4 trap).
+
+| Id | Target | Change | Result | Killer |
+|---|---|---|---|---|
+| M1 | check.c:2507 elab_inner | the Fin literal bound test never fires | KILLED | fin-range admitted |
+| M2 | check.c:2411 finAll | a failed case takes case 0 | KILLED | fin-all-case, fin-case-stuck admitted |
+| M3 | check.c:1528 Glue cover | the cover test never fires | SURVIVED | glue-cover refused with PATH_END (a second class, as in orbit-lang) |
+| M4 | check.c:1619 glue_tube | the binder test never fires | KILLED | glue-binder admitted |
+| M5 | check.c:1652 glue_branch | the inner failure is kept | KILLED | glue-equiv gives TYPE_MISMATCH, not GLUE_EQUIV |
+| M6 | check.c:1720 glue_boundary | the boundary test never fires | KILLED | glue-boundary admitted |
+| M7 | check.c:1783 rule_unglue | unglue of another type is the term | KILLED | unglue-type admitted |
+| M8 | check.c:1580 rule_hcomp | n != 0 becomes n > 1 | KILLED | hcomp-higher-universe admitted |
+| M9 | eval.c:2607 glue_at | the fallback is INTERNAL | KILLED | circle loopAt0 and loop2At0 give INTERNAL |
+| C1 | eval.c:3111 conv_system | the cover equality test never fires | KILLED | pathtool system conversion (coverage) |
+| C2 | eval.c:3072 conv_branches | each overlap compares equal | KILLED | pathtool `systems with distinct live branches remain unequal` (PATH_UIP), system conversion |
+
+The loop kills 10 of 11 mutants with 7 admissions. M3 survives for the
+orbit-lang reason. Each mutated file is restored. The shasums of
+src/front/check.c, src/front/front.c, src/front/eval.c,
+domain/domain.lang and test/pathtool.c are equal before and after the
+loop. No mutant is INVALID.
+
+### Builders
+
+| Stage | Tier | Result |
+|---|---|---|
+| apply, gate, mutants | wf-builder Fable xhigh | died, 429 (req_011Cg9QZ7NBC7zTpR19EajAp), before a file change |
+| apply, gate, mutants | wf-builder opus xhigh | died, `reasoning_extraction` (req_011Cg9Qc1RLKE6USFQBBTFi5), before a file change |
+| apply, gate, mutants, records | main loop | by hand |

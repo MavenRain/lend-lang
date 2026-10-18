@@ -145,7 +145,7 @@ scratch probe.
 | S2 | orbit-lang | 7734007 | the sealed-lang S2 to S4 kernel: I, PathP, Path, transp, hcomp, HITs, path constructors, Trunc1, Trunc0, Quot, isProp, isSet; precompiles 0x01, 0x06, 0x07, 0x08 in the runner; Prop refusal rows |
 | S3 | orbit-lang | 3a1ba76 (mechanism only) | the visibility tag, REFUSE_KIT, `langc --kit`; the orbit-lang signature rows are replaced by lend-lang rows |
 | S4 | orbit-lang | 9e28399 | the orbit quotient as a kernel declaration after `act`; `elim` on Sum and Unit |
-| S5 | orbit-lang S5 (coin-lang 44c917f, 91d7091, 34acff5) | when the USER commits it | Fin, equivalences, Glue, ua, uaBeta, hcomp at Glue and U |
+| S5 | orbit-lang S5 (coin-lang 44c917f, 91d7091, 34acff5) | a12973a | Fin, equivalences, Glue, ua, uaBeta, hcomp at Glue and U |
 | S6 | new | (design reference: zkpolicy-lang a1780a9, f176ac6) | HIITs, QIITs, dependent elim on a HIT with PathP cases (O21) |
 
 S6 is new work in this lineage, as in orbit-lang. If orbit-lang reaches S6
@@ -266,7 +266,7 @@ for each build), the counts in docs/STATUS.md, and a USER commit.
 | S2 | port orbit-lang 7734007 (kernel, precompiles, sample domain removed): DONE 2026-10-17 | the orbit-lang S2 Prop-like refusal rows; precompile vectors |
 | S3 | base-span pruning (mechanism of orbit-lang 3a1ba76); the lend-lang signature declared: DONE 2026-10-17 | REFUSE_KIT rows for each kit name and sealed-lang base op; REFUSE_SIG rows for the lend-lang signature |
 | S4 | port orbit-lang 9e28399: Orbit after actChoice (choices only; the M index waits for Obj and act), elim on Sum and Unit: DONE 2026-10-18 | Orbit fold without isSet, wrong boundary, Orbit path at run time |
-| S5 | Glue, ua, uaBeta, hcomp at Glue and U (port of orbit-lang S5) | Glue boundary mismatch, ua on a non-equivalence |
+| S5 | Glue, ua, uaBeta, hcomp at Glue and U (port of orbit-lang a12973a): DONE 2026-10-18 | Glue boundary mismatch, ua on a non-equivalence |
 | S6 | HIITs, QIITs, dependent elim on a HIT with PathP cases; Membership as a kernel HIT | wrong index in a path constructor, inductive-inductive order, a missing PathP case, admit without `M a ≡ 0` |
 | S7 | DAO prelude: Obj, act, ChoiceRule, Aggregation, Gov, IsFixedPointObj, Config, amendPath; LendingLedger over Membership by ua | a non-invariant constitution, a wrong unit, an exit that does not forfeit, the ∃ of IsSelfConstituting as a Prop |
 | S8 | ZK ledger: Pedersen on BN254 in C, Sigma-protocol verifier lowering, zkEquiv, PrivateLoan, borrow, repay, liquidate | known-answer vectors; mutants: wrong opening, range overflow, non-member step, step on a Forfeited position, point not on the curve |
@@ -370,6 +370,28 @@ examples 26, parse refusals 19, check refusals 146, kit-only refusals 22,
 evals 65, lower refusals 15, build checks 32, and the other counts equal
 to S3. The mutant loop kills 15 of 17 mutants (docs/STATUS.md section
 S4).
+
+Builder call (S5, 2026-10-18): the port of orbit-lang a12973a. On 68ce871
+(the USER S4 records commit on 993ee13), the patch is `git -C
+~/Documents/orbit-lang diff 9e28399 a12973a -- .` without docs/PLAN.md,
+README.md, design and docs/STATUS.md (38 files, 83 hunks, +1527 -76),
+applied with `git apply --3way` (scratch probe first, same result). The
+apply gave 5 conflict files, each resolved by hand: src/front/eval.c (2
+hunks: the lend-lang conv_system, conv_branches and mark_intervals of
+2449b67 stay, the orbit-lang S5 conv_system goes out, and conv_loop
+keeps one call because the lend-lang rule is symmetric), test/pathtool.c
+(3 hunks: both sides stay), SPEC.md (1 hunk: the lend-lang name with
+F17), examples/orbit.lang (1 hunk: the lend-lang `agreeFlipped` with
+actObj stays and the orbit-lang S5 lines are added) and
+docs/VALIDATION.md (2 hunks). No added line uses act, Member, Group or
+Outcome, thus the new files need no name change. The wf-builder stage
+(Fable xhigh) died on a 429 (req_011Cg9QZ7NBC7zTpR19EajAp) and the opus
+xhigh fallback died on `reasoning_extraction`
+(req_011Cg9Qc1RLKE6USFQBBTFi5), both before a file change. Thus the
+port, the mutants and the records are by hand. The gate `make -B check`
+is GREEN, exit 0: examples 29, check refusals 161, evals 75, lower
+refusals 16, build checks 33, and the other counts equal to S4. The
+mutant loop kills 10 of 11 mutants (docs/STATUS.md section S5).
 
 ## 9. Open items
 
