@@ -1,0 +1,2 @@
+-- lend-lang S3 (PLAN section 3, O4): LendingLedger is a defined name (the ledger of S7), reserved (REFUSE_SIG).
+def LendingLedger : Type 0 := Unit

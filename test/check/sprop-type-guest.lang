@@ -1,0 +1,2 @@
+-- No Prop-like universe (O20), guest mode: SProp is not a type.
+def P : SProp := Unit

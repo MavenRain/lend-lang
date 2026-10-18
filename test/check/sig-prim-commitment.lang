@@ -1,0 +1,2 @@
+-- lend-lang S3 (PLAN section 3, O4): Commitment is a primitive name, reserved (REFUSE_SIG).
+def Commitment : Type 0 := Unit

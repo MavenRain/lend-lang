@@ -1,0 +1,2 @@
+-- lend-lang S3 (PLAN section 3, O4): commitUnit, the unit of the commitment monoid, is a primitive name (REFUSE_SIG).
+def commitUnit : Unit := unit

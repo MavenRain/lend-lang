@@ -1,0 +1,2 @@
+-- lend-lang S3 (PLAN section 3, O4): Gov is a defined name (a DAO prelude operation of S7), reserved (REFUSE_SIG).
+def Gov : Unit -> Unit := fun (u : Unit) => u

@@ -1,0 +1,4 @@
+-- lend-lang S3 (PLAN section 3, O4): actChoice must have the type G -> Choice -> Choice (REFUSE_SIG).
+def G : Type 0 := Unit
+def Choice : Type 0 := Unit
+def actChoice : Choice -> Choice := fun (c : Choice) => c

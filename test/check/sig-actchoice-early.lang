@@ -1,0 +1,4 @@
+-- lend-lang S3 (PLAN section 3, O4): actChoice before the program defines G and Choice (REFUSE_SIG).
+def actChoice : Unit -> Unit -> Unit := fun (g : Unit) (c : Unit) => c
+def G : Type 0 := Unit
+def Choice : Type 0 := Unit

@@ -264,7 +264,7 @@ for each build), the counts in docs/STATUS.md, and a USER commit.
 | S0 | seed: design, plan, kit scaffold | kit gate GREEN |
 | S1 | rulings on O1 to O26: DONE 2026-10-17, all defaults | none |
 | S2 | port orbit-lang 7734007 (kernel, precompiles, sample domain removed): DONE 2026-10-17 | the orbit-lang S2 Prop-like refusal rows; precompile vectors |
-| S3 | base-span pruning (mechanism of orbit-lang 3a1ba76); the lend-lang signature declared | REFUSE_KIT rows for each kit name and sealed-lang base op; REFUSE_SIG rows for the lend-lang signature |
+| S3 | base-span pruning (mechanism of orbit-lang 3a1ba76); the lend-lang signature declared: DONE 2026-10-17 | REFUSE_KIT rows for each kit name and sealed-lang base op; REFUSE_SIG rows for the lend-lang signature |
 | S4 | port orbit-lang 9e28399: Orbit M after act, elim on Sum and Unit | Orbit fold without isSet, wrong boundary, Orbit path at run time |
 | S5 | Glue, ua, uaBeta, hcomp at Glue and U (port of orbit-lang S5) | Glue boundary mismatch, ua on a non-equivalence |
 | S6 | HIITs, QIITs, dependent elim on a HIT with PathP cases; Membership as a kernel HIT | wrong index in a path constructor, inductive-inductive order, a missing PathP case, admit without `M a ≡ 0` |
@@ -286,6 +286,40 @@ docs/host/README.md changes in two lines that named orbit-lang as this
 repo. The gate `make -B check` is GREEN, and each count is equal to the
 orbit-lang S2 count (docs/STATUS.md section S2). S2 does not prune; S3
 prunes ("port first, prune second").
+
+Builder call (S3, 2026-10-17): the mechanism of orbit-lang 3a1ba76 and the
+lend-lang signature. Identity check: on 2449b67 (the USER S2 commit), the
+trees domain, examples, Makefile, formers, gen and probe are equal to the
+trees of orbit-lang 7734007. The trees src and test and the file
+docs/VALIDATION.md are different only by the USER review fix of 2449b67:
+`conv_system`, `conv_branches` and `mark_intervals` in src/front/eval.c,
+4 roundtrip rows and 1 refusal row (`rejected`) in test/pathtool.c, and a
+2026-10-17 paragraph in docs/VALIDATION.md. orbit-lang has no
+`conv_system` in a commit. USER ruling (S3 session 1, 2026-10-17):
+continue, and keep the fix as a known lend-lang-only delta. The patch is
+`git -C ~/Documents/orbit-lang diff 7734007 3a1ba76 -- .` without
+docs/PLAN.md, README.md, design and docs/STATUS.md (58 files, +597 -161),
+applied with `git apply --3way`. A scratch clone probe and the repo apply
+gave 1 conflict file, docs/VALIDATION.md, with 2 prose hunks (the "Host
+executable" line, and the review-fix paragraph against the orbit-lang S3
+paragraph). Both hunks are resolved by hand: both paragraphs stay, and the
+executable line is "at 2449b67 plus the S3 changes". There are 0 code
+conflicts. After the apply, the trees src, test, domain, examples,
+Makefile, formers, gen and probe are equal to the trees of orbit-lang 3a1ba76,
+except src/front/eval.c and test/pathtool.c (the review fix). The orbit-lang
+README.md does not change from 7734007 to 3a1ba76; the `--kit` usage lines
+are in docs/host/README.md, which the patch applies. The signature swap
+replaces the orbit-lang SIGNATURE table of src/front/check.c with the
+lend-lang table (18 types, 13 operations; docs/STATUS.md section S3) and
+the 6 orbit-lang REFUSE_SIG rows with 16 lend-lang rows, and adds 4 Prop
+rows. The wf-builder stage (Fable xhigh) died on a 429 usage limit
+(req_011Cg8rYD9gsEoBrNUVtitST), and the opus xhigh fallback died on the
+`reasoning_extraction` classifier (req_011Cg8rcsqDwcS29CFnEXgZc), both
+before a file change. Thus the swap is built by hand, as orbit-lang S3 to
+S5 did. formers/tcc-evm-contract.md line 7 names lend-lang S3. The gate
+`make -B check` is GREEN, exit 0: examples 25, parse refusals 19, check
+refusals 133, kit-only refusals 22, evals 62, and the other counts equal
+to S2. The mutant loop kills 20 of 20 mutants (docs/STATUS.md section S3).
 
 ## 9. Open items
 

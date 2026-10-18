@@ -1,0 +1,2 @@
+-- lend-lang S3 (PLAN section 3, O4): a type slot must have the type Type 0 (REFUSE_SIG).
+def Agent : Type 1 := Type 0

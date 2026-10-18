@@ -1,0 +1,2 @@
+-- lend-lang S3 (PLAN section 3, O4): Orbit is a defined name (the orbit quotient of S4), reserved (REFUSE_SIG).
+def Orbit : Type 0 := Unit

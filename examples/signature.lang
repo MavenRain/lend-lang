@@ -1,0 +1,16 @@
+-- The lend-lang design signature slots (slice S3, PLAN section 3), guest mode: the six type slots from formers and actChoice at its slot type.
+-- actChoice g flips the choice when g is inr (the Z2 flip, the neutrality action on choices) and keeps it when g is inl.
+def Agent : Type 0 := Sum Unit Unit
+def Choice : Type 0 := Sum Unit Unit
+def G : Type 0 := Sum Unit Unit
+def D : Type 0 := Choice
+def Position : Type 0 := Prod Unit Unit
+def Proposal : Type 0 := Prod Choice D
+
+def flip : Choice -> Choice := fun (c : Choice) => either (fun (u : Unit) => inr unit) (fun (u : Unit) => inl unit) c
+
+def actChoice : G -> Choice -> Choice :=
+  fun (g : G) (c : Choice) => either (fun (u : Unit) => c) (fun (u : Unit) => flip c) g
+
+def flipped : Choice := actChoice (inr unit) (inl unit)
+def kept : Choice := actChoice (inl unit) (inl unit)

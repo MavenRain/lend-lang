@@ -1,0 +1,2 @@
+-- lend-lang S3 (PLAN section 3, O4): borrow is a defined name (a lending step of S8), reserved (REFUSE_SIG).
+def borrow : Unit -> Unit := fun (u : Unit) => u

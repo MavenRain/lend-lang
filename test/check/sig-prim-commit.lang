@@ -1,0 +1,2 @@
+-- lend-lang S3 (PLAN section 3, O4): commit is a primitive name, reserved (REFUSE_SIG).
+def commit : Unit -> Unit := fun (u : Unit) => u

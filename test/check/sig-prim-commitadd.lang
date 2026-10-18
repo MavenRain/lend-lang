@@ -1,0 +1,2 @@
+-- lend-lang S3 (PLAN section 3, O4): commitAdd, the commitment monoid operation, is a primitive name (REFUSE_SIG).
+def commitAdd : Unit -> Unit -> Unit := fun (a : Unit) (b : Unit) => a
