@@ -265,7 +265,7 @@ for each build), the counts in docs/STATUS.md, and a USER commit.
 | S1 | rulings on O1 to O26: DONE 2026-10-17, all defaults | none |
 | S2 | port orbit-lang 7734007 (kernel, precompiles, sample domain removed): DONE 2026-10-17 | the orbit-lang S2 Prop-like refusal rows; precompile vectors |
 | S3 | base-span pruning (mechanism of orbit-lang 3a1ba76); the lend-lang signature declared: DONE 2026-10-17 | REFUSE_KIT rows for each kit name and sealed-lang base op; REFUSE_SIG rows for the lend-lang signature |
-| S4 | port orbit-lang 9e28399: Orbit M after act, elim on Sum and Unit | Orbit fold without isSet, wrong boundary, Orbit path at run time |
+| S4 | port orbit-lang 9e28399: Orbit after actChoice (choices only; the M index waits for Obj and act), elim on Sum and Unit: DONE 2026-10-18 | Orbit fold without isSet, wrong boundary, Orbit path at run time |
 | S5 | Glue, ua, uaBeta, hcomp at Glue and U (port of orbit-lang S5) | Glue boundary mismatch, ua on a non-equivalence |
 | S6 | HIITs, QIITs, dependent elim on a HIT with PathP cases; Membership as a kernel HIT | wrong index in a path constructor, inductive-inductive order, a missing PathP case, admit without `M a ≡ 0` |
 | S7 | DAO prelude: Obj, act, ChoiceRule, Aggregation, Gov, IsFixedPointObj, Config, amendPath; LendingLedger over Membership by ua | a non-invariant constitution, a wrong unit, an exit that does not forfeit, the ∃ of IsSelfConstituting as a Prop |
@@ -320,6 +320,56 @@ S5 did. formers/tcc-evm-contract.md line 7 names lend-lang S3. The gate
 `make -B check` is GREEN, exit 0: examples 25, parse refusals 19, check
 refusals 133, kit-only refusals 22, evals 62, and the other counts equal
 to S2. The mutant loop kills 20 of 20 mutants (docs/STATUS.md section S3).
+
+Builder call (S4, 2026-10-17): the port of orbit-lang 9e28399. On ee9b215
+(the USER S3 commit), the patch is `git -C ~/Documents/orbit-lang diff
+3a1ba76 9e28399 -- .` without docs/PLAN.md, README.md, design and
+docs/STATUS.md (27 files, 41 hunks, +536 -18), applied with `git apply
+--3way` after a fetch of the orbit-lang objects. The apply gave 3
+conflict files, each resolved by hand: SPEC.md (1 hunk: the orbit-lang
+F16 text with the lend-lang name), test/check/expect.txt (1 hunk: the
+lend-lang S3 rows and the 13 orbit-lang S4 rows stay, the orbit-lang
+`sig-act-*` rows do not) and docs/VALIDATION.md (2 hunks: the counts go
+to S4, the lend-lang S3 and review paragraphs stay, and an S4 paragraph
+is added). There are 0 code conflicts, and the eval.c `conv_system` fix
+of 2449b67 composes with the patch. Adaptation by hand: (1) in
+src/front/front.c the kernel puts Orbit and orbitProj after the program
+`def actChoice` (orbit-lang: `def act`), function
+`orbit_after_act_choice`, and ORBIT_R is the relation of Quot over Agent
+-> Choice: R c d = Sigma (g : G) (Path (Agent -> Choice) (fun (a :
+Agent) => actChoice g (d a)) c). (2) In src/front/check.c the kernel_sig
+comment and message say "after actChoice". The review before 993ee13 adds
+`orbitProj` as SIG_OP/SIG_DEFINED, reserving it for program events, state
+constructors and projections even before actChoice. The other SIGNATURE
+rows do not change: `act`, `Orbit` and `orbitProjection` stay SIG_DEFINED. `act`
+stays reserved, thus the examples use a helper `actObj` (actChoice at
+each agent). (3) examples/orbit.lang, test/lower/orbit-word.lang,
+test/check/orbit-*.lang and test/check/orbitproj-guest-def.lang use the
+lend-lang names: Member is Agent, Group is G, Outcome is D, and `def act`
+is `def actChoice` plus `def actObj`. Design note: section 3 gives Orbit
+M := Obj M / act M, over the current members, with member permutation
+(O8). S4 ports the orbit-lang form: Orbit over all of Agent -> Choice,
+choices only. The M index and the member permutation wait for the slice
+that defines Obj and act (S7). In session 1 the wf-builder stage (Fable
+xhigh) died on a 429 usage limit (req_011Cg9C2NqbCP9jH4Baoyh7o) and the
+opus xhigh fallback died on the `reasoning_extraction` classifier
+(req_011Cg9C5T7u3seuat8mYPr2E), both before a file change. Thus the port
+is built by hand. In session 2 the records builder (Fable xhigh) died on
+a 429 (req_011Cg9HyC5ZJvfdiGSiWPMCQ) and its opus xhigh fallback died on
+`reasoning_extraction` (req_011Cg9JH3RfDR42Tgz8EYv17), both before a file
+change, thus the mutants and the records are by hand too. Session 2 adds
+one kit row to test/fronttool.c, `state State := Orbit` (REFUSE_SIG).
+sig_member_free reads the SIGNATURE rows, and kernel_sig refuses `def
+Orbit` before the table, thus `sig-def-orbit` alone does not kill a
+removed Orbit row (mutant K14r). The USER committed the code as 993ee13;
+it also includes three orbitProj kit refusals and two positive fronttool
+cases for event-local fields and trusted domain declarations. The original
+mutant loop predates the orbitProj SIGNATURE row; STATUS section S4 records
+that snapshot separately. The gate `make -B check` is GREEN, exit 0:
+examples 26, parse refusals 19, check refusals 146, kit-only refusals 22,
+evals 65, lower refusals 15, build checks 32, and the other counts equal
+to S3. The mutant loop kills 15 of 17 mutants (docs/STATUS.md section
+S4).
 
 ## 9. Open items
 

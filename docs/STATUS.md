@@ -266,3 +266,160 @@ hand.
 | Session | Fable xhigh (429, usage limit) | opus xhigh fallback (`reasoning_extraction`) |
 |---|---|---|
 | 1 | req_011Cg8rYD9gsEoBrNUVtitST | req_011Cg8rcsqDwcS29CFnEXgZc |
+
+## S4
+
+Slice S4 (the orbit quotient and the dependent eliminator, PLAN section
+8) is complete on commit 993ee13 (the USER S4 commit on ee9b215). The
+code ports orbit-lang 9e28399. The kernel declares Orbit and
+orbitProj directly after the program `def actChoice`, the G-action on
+Choice, and `elim P c1 .. cn x` eliminates Sum A B and Unit into a
+motive. The port is one patch, `git apply --3way`, with 3 conflict files
+(SPEC.md, test/check/expect.txt, docs/VALIDATION.md) and 0 code conflicts
+(PLAN section 8 "Builder call (S4, 2026-10-17)"). lend-lang keeps its
+deltas: the USER review fix of 2449b67 (`conv_system`), the S3 review fix
+(`sig_member_free`), the Orbit kit row, and the committed orbitProj
+signature reservation and its regressions in test/fronttool.c. The gate
+`make -B check` is GREEN, exit 0 (logs `lend-lang-work/S4-gate.log` and
+`lend-lang-work/S4-gate-final.log`).
+
+| Count | S3 (ee9b215) | S4 | orbit-lang S4 | Reason |
+|---|---|---|---|---|
+| examples | 25 | 26 | 26 | `orbit` (guest): isSet Choice by elim, the fold of Orbit into Choice |
+| parse refusals | 19 | 19 | 19 | no change |
+| check refusals | 133 | 146 | 132 | the 13 orbit-lang S4 rows |
+| kit-only refusals | 22 | 22 | 22 | no change |
+| evals | 62 | 65 | 65 | `orbit agreeAll`, `orbit agreeSplit`, `orbit agreeFlipped` |
+| lower refusals | 14 | 15 | 15 | `orbit-word` |
+| build checks | 31 | 32 | 32 | `orbit-word` |
+
+Check refusals 146 against 132: orbit-lang S4 is orbit-lang S3 (119) plus
+13; lend-lang S4 is lend-lang S3 (133) plus the same 13. The other counts
+do not change and are equal to S3 and to orbit-lang S4: runs 5, run
+refusals 10, asmtool 8 of 8, builds 3, dispatch 20, evm steps 43,
+precompile steps 18, mock 13 rows, diff 15 rows, emit 24, and the review,
+domain, path, fuel, output, lower and hashing regressions.
+
+The 13 check rows (test/check/expect.txt), all guest rows.
+
+| Row | Form | Code | Mutant |
+|---|---|---|---|
+| `orbit-guest-def`, `orbitproj-guest-def` | a program `def Orbit` or `def orbitProj` after actChoice | REFUSE_SIG | G0, G1 |
+| `orbit-no-act` | Orbit with no `def actChoice` | NAME_UNKNOWN | O1 |
+| `orbit-fold-no-set` | a fold of Orbit with no isSet case | TYPE_MISMATCH | F1 |
+| `orbit-fake-set` | a false isSet case | PATH_END | P1b |
+| `orbit-boundary` | a quotEq path with a wrong witness | PATH_END | P1 |
+| `elim-scrutinee` | elim on a scrutinee that is not Sum or Unit | TYPE_MISMATCH | E1 |
+| `elim-case-count` | elim with a wrong case count | TYPE_MISMATCH | E2 |
+| `elim-motive-dom` | elim with a wrong motive domain | TYPE_MISMATCH | E3 |
+| `elim-case-type` | elim with a wrong case type | TYPE_MISMATCH | E4 |
+| `elim-path-k` | elim on a Path (no K) | TYPE_MISMATCH | E1b |
+| `elim-motive-prop` | a motive into Prop | NAME_UNKNOWN | N1b |
+| `unit-no-eta` | Unit eta | PATH_END | P1 |
+
+Adaptation (by hand, PLAN section 8): (1) src/front/front.c,
+`orbit_after_act_choice`: the trigger is the program `def actChoice`
+(orbit-lang: `def act`), and ORBIT_R is Quot over Agent -> Choice with R
+c d = Sigma (g : G) (Path (Agent -> Choice) (fun (a : Agent) =>
+actChoice g (d a)) c). (2) src/front/check.c: the kernel_sig comment and
+message say "after actChoice". Review before 993ee13 adds `orbitProj` as
+SIG_OP/SIG_DEFINED to SIGNATURE, bringing S4 to 19 defined names from the
+18 of S3. The other rows do not change. `act` stays reserved, thus the
+examples use the helper `actObj`. (3) The
+examples and rows use Agent, G, D, `def actChoice` and `def actObj` for
+the orbit-lang Member, Group, Outcome and `def act`.
+
+Design note. PLAN section 3 gives Orbit M := Obj M / act M, over the
+current members, with member permutation (O8). S4 ports the orbit-lang
+form: Orbit over all of Agent -> Choice, choices only. The M index and
+the member permutation wait for the slice that defines Obj and act (S7).
+
+The fronttool row. test/fronttool.c adds `ok &= kit("state State :=
+Orbit", "REFUSE_SIG");` (S4 session 2). sig_member_free reads the
+SIGNATURE rows, and kernel_sig refuses `def Orbit` before the table, thus
+`sig-def-orbit` alone does not kill a removed Orbit row. The kit row
+kills it (K14r). The committed review also tests `event orbitProj`,
+`state State := orbitProj`, and `state State := makeState (orbitProj :
+Nat)` as REFUSE_SIG before actChoice is defined. Positive cases keep
+`event Opened (orbitProj : Nat)` and trusted `family Local := orbitProj`
+valid.
+
+Mutants, one at a time (runner `lend-lang-work/S4-mutants.sh`, log
+`lend-lang-work/S4-mutants.log`, run 1 log
+`lend-lang-work/S4-mutants.run1.log`). This original loop predates the
+orbitProj SIGNATURE row in 993ee13: removing only that row reproduces
+the logged check.c SHA-1, `4a9a07a5e86f77b78de42fd751cc8d808b370c23`.
+The table and restoration claims below describe that earlier snapshot.
+The runner is a copy of
+`orbit-lang-work/S4-mutants.sh` (G0, G1, O1, E1 to E4, F1, P1, N1, L1,
+P1b, E1b, N1b, probe L1r) plus A1, S1 and K14r. The deltas: the O1
+regexes anchor `"actChoice") != 0` and the lend-lang ORBIT_R; the third
+G1 edit anchors at a two-space indent, so that the sig_member_free FAIL
+(six spaces) does not change and only the 2 kernel_sig lines change, as
+in orbit-lang; `mut()` also needs a `build/fronttool` newer than the
+edit; the pristine pass also checks `examples/orbit.lang` (ok) and
+`build/fronttool` (pass). Each mutant: cp save, edit, `make -B build`,
+rows, cp restore.
+
+| Mutant | Site | Edit | Killer | Verdict |
+|---|---|---|---|---|
+| G0 kernel_sig admits alone | src/front/check.c:2915 | `if (1 \|\| d->origin != ORIGIN_PROGRAM \|\| ...)` | `orbit-guest-def`, `orbitproj-guest-def`: want REFUSE_SIG, got REFUSE_NAME (rule R4) | KILLED (diagnostic) |
+| G1 G0 + name_free + the defined-name test | :2350, :2908, :2915, :2917 | each `return FAIL(...)` gives 1, and G0 | `orbit-guest-def`, `orbitproj-guest-def`: want REFUSE_SIG, got `ok` | KILLED |
+| O1 Orbit with no act | src/front/front.c:17, :30 | ORBIT_R: `Path (Agent -> Choice) d c`; the trigger is `"G"` | `orbit-no-act`: want NAME_UNKNOWN, got `ok` | KILLED |
+| E1 elim scrutinee test admits | src/front/check.c:855 | `if (0 * !val_is(st, OP_SUM) && ...)` | `elim-scrutinee`: want TYPE_MISMATCH, got `ok`; GAP `elim-path-k` (TYPE_INFER) | KILLED |
+| E2 case count from the call | :857 | `want = k->argc - 2u;` | `elim-case-count`: want TYPE_MISMATCH, got `ok` | KILLED |
+| E3 scrutinee type for the motive domain | :854 | `st` is the try_infer type of the last argument, else `pt->dom` | `elim-motive-dom`: want TYPE_MISMATCH, got `ok` | KILLED |
+| E4 inl case inferred | :865 | `i == 0u ? infer(c, k->args[1], &pt) : check(...)` | `elim-case-type`: want TYPE_MISMATCH, got `ok` | KILLED |
+| F1 a fold fills a missing last case with the first | :1134, :1144, :1159 | `j + 1u >= k->argc ? cores[0] : ...`, `k->used = k->argc;`, `ctor_count <= k->argc` | `orbit-fold-no-set`: want TYPE_MISMATCH, got `ok` | KILLED |
+| P1 end_fail passes a PATH_END | :469 | `return 1 ? 1 : FAIL(c, "PATH_END", ...)` | `orbit-boundary`, `unit-no-eta`: want PATH_END, got `ok`; GAP `orbit-fake-set` (PATH_UIP) | KILLED |
+| N1 the domain gains a sort Prop | domain/domain.lang | `def Prop : Type 1 := Type 0` | GAP `elim-motive-prop` (REFUSE_NAME: RESERVED has Prop, rule R4) | SURVIVED |
+| L1 elim on a formal hcomp reduces as elim on its base | src/front/eval.c:731 | reduce_elim on the hcomp base for the stuck elim (O22) | GAP `orbit-word` (REFUSE_LOWER: K4c does not lower elim at a word position) | SURVIVED |
+| P1b P1 + end_fail passes a PATH_UIP | src/front/check.c:468, :469 | both `return 1 ? 1 : FAIL(...)` | `orbit-fake-set`: want PATH_END, got `ok` | KILLED |
+| E1b E1 + a K case type | :801, :855 | `elim_case`: a PathP scrutinee gives the one case type P refl; and E1 | `elim-path-k`: want TYPE_MISMATCH, got `ok` | KILLED |
+| N1b N1 + RESERVED without Prop | domain/domain.lang, src/front/check.c:186 | N1, and RESERVED is `{"Bool", "Text", "SProp"}` | `elim-motive-prop`: want NAME_UNKNOWN, got `ok` | KILLED |
+| A1 the Orbit trigger is act | src/front/front.c:30 | `"act"` for `"actChoice"` | `examples/orbit.lang`: want `ok`, got NAME_UNKNOWN (unknown name Orbit) | KILLED |
+| S1 check_ctor does not test the signature | src/front/check.c:2525 | `if (!name_free(c, ctor->name))` | `build/fronttool`: want REFUSE_SIG, got `ok`: `state State := Commitment` | KILLED |
+| K14r the Orbit row removed from SIGNATURE | :2824 | the row `{"Orbit", SIG_TYPE, SIG_DEFINED},` removed | `build/fronttool`: want REFUSE_SIG, got `ok`: `state State := Orbit` | KILLED |
+| L1r probe (not counted) | src/front/eval.c:731 | `return internal(m, "L1r");` | GAP `orbit-word` (the same REFUSE_LOWER) | SURVIVED |
+
+Score: 15 of 17 killed. N1 and L1 survive, as in orbit-lang (12 of 14
+there). N1: RESERVED has Prop, thus `def Prop` meets REFUSE_NAME (rule
+R4) before the motive test; N1b kills the pair. L1: `orbit-word` refuses
+with REFUSE_LOWER (K4c does not lower elim at a word position,
+src/lower.c:645) before the reduce_elim hcomp line. The probe L1r makes
+that line INTERNAL and gives the same REFUSE_LOWER, thus the line is not
+reached and L1 is equivalent for `orbit-word`.
+
+E2 and E3 retarget. The orbit-lang E2 and E3 anchors (`uint32_t want =
+val_is(st, OP_SUM) ? 2u : 1u;` and `|| !conv_values(c->m, c->level,
+pt->dom, st))`) are not in orbit-lang 9e28399: the orbit-lang mutant log
+(2026-10-17 12:22) is older than the 9e28399 commit (12:47), and rule_elim
+changed after that loop. Thus run 1 gave E2 and E3 INVALID (the edit
+changed nothing). Run 2 anchors `want = val_is(st, OP_SUM) ? 2u : 1u;`
+(E2) and `st = pt->dom;` (E3). For E3, elim_domain returns the motive
+annotation, thus a fallback form would be equivalent; the edit uses the
+inferred type of the scrutinee in place of the motive domain.
+
+After the loop, src/front/check.c is equal to every check.c save,
+src/front/front.c to the A1 save, src/front/eval.c to the L1r save and
+domain/domain.lang to the N1b save (cmp). The shasum of the four files is
+the same before and after the loop, and the final `make -B build` exits 0.
+
+Staged documentation review (2026-10-18): the same runner, with only its
+R and S directories changed to an isolated checkout, repeats the loop on
+993ee13. It again kills 15 of 17 mutants; N1 and L1 survive, and the
+separate L1r probe survives. There are no invalid mutants. The restored
+check.c SHA-1 is `678de5305a644ed38e5ff00c0380b92da840804e`, and all four
+source hashes match before and after. A full `make -B check` on this
+source also passes. Review artifacts are under
+`/private/tmp/lend-lang-review.23pBI4`: the gate capture is
+`repo/.kanon-exec/run-mYXMXX` and the mutant capture is
+`.kanon-exec/run-8MIE1y`.
+
+Builder deaths. Each tier died before any file change. The port, the
+mutants and the records are built by hand.
+
+| Session | Fable xhigh (429, usage limit) | opus xhigh fallback (`reasoning_extraction`) |
+|---|---|---|
+| 1 (port) | req_011Cg9C2NqbCP9jH4Baoyh7o | req_011Cg9C5T7u3seuat8mYPr2E |
+| 2 (records) | req_011Cg9HyC5ZJvfdiGSiWPMCQ | req_011Cg9JH3RfDR42Tgz8EYv17 |

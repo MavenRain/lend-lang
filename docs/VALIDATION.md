@@ -1,7 +1,7 @@
 # Validation
 
-Date: 2026-10-17. tcc: 0.9.28rc. evm (go-ethereum): 1.14.12. Host
-executable: `build/langc` at 2449b67 plus the S3 and S4 changes.
+Date: 2026-10-18. tcc: 0.9.28rc. evm (go-ethereum): 1.14.12. Host
+executable: `build/langc` at 993ee13.
 
 `make -B check` passes: it builds `langc` and the test tools with tcc,
 runs the clang `-Wall -Wextra -Wswitch-enum -Werror` check, and runs the
@@ -83,4 +83,12 @@ Orbit or orbitProj, Orbit with no actChoice, an Orbit fold with no isSet
 case, a false isSet case, a quotEq path with a wrong witness, elim with a
 wrong case type, case count, scrutinee or motive domain, a motive into
 Prop, elim on a Path (no K), Unit eta, and an Orbit value at a word
-position. Mutants: docs/STATUS.md "## S4".
+position. Review before 993ee13 also reserves orbitProj in SIGNATURE,
+bringing S4 to 19 defined names (18 in S3). Three fronttool kit refusals
+cover program events, state constructors and state projections with that
+name before actChoice is defined; two positive cases preserve local event
+fields and trusted domain declarations. The original mutant loop kills
+15 of 17 mutants on the snapshot before the orbitProj row was added
+(docs/STATUS.md section S4). The staged documentation review repeats the
+loop on 993ee13 with the same results and matching source hashes before
+and after, and a full `make -B check` on that source passes.
