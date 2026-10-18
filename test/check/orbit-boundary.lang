@@ -1,0 +1,15 @@
+-- A quotEq path needs a witness of R: actObj g sends the second end to the first. actObj (inr unit) sends allA to allB, not to allA, so refl is not a witness and the path is refused.
+def Agent : Type 0 := Sum Unit Unit
+def Choice : Type 0 := Sum Unit Unit
+def D : Type 0 := Choice
+def G : Type 0 := Sum Unit Unit
+def flip : Choice -> Choice := fun (c : Choice) => either (fun (u : Unit) => inr unit) (fun (u : Unit) => inl unit) c
+def actChoice : G -> Choice -> Choice :=
+  fun (g : G) (c : Choice) => either (fun (u : Unit) => c) (fun (u : Unit) => flip c) g
+
+-- actObj g f: the G-action on the voter assignments, actChoice g at each agent (actObj is reserved).
+def actObj : G -> (Agent -> Choice) -> Agent -> Choice :=
+  fun (g : G) (f : Agent -> Choice) (m : Agent) => actChoice g (f m)
+def allA : Agent -> Choice := fun (m : Agent) => inl unit
+def bad : Path Orbit (orbitProj allA) (orbitProj allA) :=
+  fun (i : I) => quotEq (Agent -> Choice) (fun (c : Agent -> Choice) (d : Agent -> Choice) => Sigma (g : G) (Path (Agent -> Choice) (actObj g d) c)) allA allA (pack (inr unit) refl) i

@@ -1,0 +1,6 @@
+-- The kernel gives Orbit only after a program def actChoice. This program has the four type slots and no actChoice, so the name Orbit is unknown.
+def Agent : Type 0 := Sum Unit Unit
+def Choice : Type 0 := Sum Unit Unit
+def D : Type 0 := Choice
+def G : Type 0 := Sum Unit Unit
+def Votes : Type 0 := Orbit

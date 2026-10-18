@@ -1,13 +1,13 @@
 # Validation
 
 Date: 2026-10-17. tcc: 0.9.28rc. evm (go-ethereum): 1.14.12. Host
-executable: `build/langc` at 2449b67 plus the S3 changes.
+executable: `build/langc` at 2449b67 plus the S3 and S4 changes.
 
 `make -B check` passes: it builds `langc` and the test tools with tcc,
 runs the clang `-Wall -Wextra -Wswitch-enum -Werror` check, and runs the
-gate scripts. It runs 25 examples, 19 parse refusals, 133 check
-refusals, 22 kit-only refusals, 62 evals, 5 runs, 10 run refusals, 8
-asmtool checks, 3 builds, 14 lower refusals, 31 build checks, 20
+gate scripts. It runs 26 examples, 19 parse refusals, 146 check
+refusals, 22 kit-only refusals, 65 evals, 5 runs, 10 run refusals, 8
+asmtool checks, 3 builds, 15 lower refusals, 32 build checks, 20
 dispatch checks, 43 evm steps, 18 precompile steps, 13 mock rows, 15
 diff rows, 24 emit regressions and the review, domain, path, fuel,
 output, lower and hashing regressions, with zero failures.
@@ -72,3 +72,15 @@ Nine C regression cases in test/fronttool.c failed before the fix and pass
 after it. Two positive cases preserve event-local field names and trusted
 domain declarations. `make -B check` passes on the reviewed staged snapshot
 with these fixes, including the clang syntax checks and all gate scripts.
+
+The S4 review ports orbit-lang 9e28399: Orbit and the dependent eliminator
+(PLAN section 8). The kernel declares Orbit and orbitProj directly after
+`actChoice`, the G-action on Choice, and `elim P c1 .. cn x` eliminates
+Sum A B and Unit into a motive. The review adds the guest example `orbit`
+(isSet Choice by elim, the fold of Orbit into Choice) and its 3 evals, 13
+check refusals and the lower refusal `orbit-word`. Refusals cover a program
+Orbit or orbitProj, Orbit with no actChoice, an Orbit fold with no isSet
+case, a false isSet case, a quotEq path with a wrong witness, elim with a
+wrong case type, case count, scrutinee or motive domain, a motive into
+Prop, elim on a Path (no K), Unit eta, and an Orbit value at a word
+position. Mutants: docs/STATUS.md "## S4".

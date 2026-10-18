@@ -1,0 +1,13 @@
+-- Orbit is a defined name of the design signature: the kernel gives it directly after actChoice, so a program def Orbit is refused.
+def Agent : Type 0 := Sum Unit Unit
+def Choice : Type 0 := Sum Unit Unit
+def D : Type 0 := Choice
+def G : Type 0 := Sum Unit Unit
+def flip : Choice -> Choice := fun (c : Choice) => either (fun (u : Unit) => inr unit) (fun (u : Unit) => inl unit) c
+def actChoice : G -> Choice -> Choice :=
+  fun (g : G) (c : Choice) => either (fun (u : Unit) => c) (fun (u : Unit) => flip c) g
+
+-- actObj g f: the G-action on the voter assignments, actChoice g at each agent (actObj is reserved).
+def actObj : G -> (Agent -> Choice) -> Agent -> Choice :=
+  fun (g : G) (f : Agent -> Choice) (m : Agent) => actChoice g (f m)
+def Orbit : Type 0 := Unit

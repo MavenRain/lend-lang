@@ -83,6 +83,31 @@ int main(void) {
   int ok = 1;
   /* The empty domain (sealed-lang S2, R21) lexes, parses and checks. */
   ok &= domain("", NULL);
+  /* Elimination consumes its scrutinee before applying a functional result. */
+  ok &= guest("def applyUnit : Unit -> Unit -> Unit := fun (u : Unit) (v : Unit) => "
+              "elim (fun (w : Unit) => Unit -> Unit) (fun x => x) u v", NULL);
+  ok &= guest("def applySum : Sum Unit Unit -> Unit -> Unit := fun (s : Sum Unit Unit) (v : Unit) => "
+              "elim (fun (t : Sum Unit Unit) => Unit -> Unit) (fun a x => x) (fun b x => x) s v", NULL);
+  ok &= guest("def choose : Sum Unit Unit -> Unit := "
+              "elim (fun (s : Sum Unit Unit) => Unit) (fun u => u) (fun u => u)", NULL);
+  ok &= normal_roundtrip("Unit -> Unit", "fun (u : Unit) => elim (fun (v : Unit) => Unit) unit u");
+  ok &= normal_roundtrip("Sum Unit Unit -> Unit", "fun (s : Sum Unit Unit) => "
+                         "elim (fun (t : Sum Unit Unit) => Unit) (fun u => u) (fun u => u) s");
+  ok &= normal_roundtrip("(A : Type 0) -> (s : Sum A Unit) -> Path (Sum A Unit) s s", "fun (A : Type 0) (s : Sum A Unit) => "
+                         "elim (fun (t : Sum A Unit) => Path (Sum A Unit) t t) (fun a => refl) (fun u => refl) s");
+  ok &= guest("def s : Sum Unit Unit := inl unit\n"
+              "def left : (v : Unit) -> Path Unit (elim (fun (t : Sum Unit Unit) => Unit -> Unit) "
+              "(fun a x => x) (fun b x => unit) s v) v := fun v => refl\n"
+              "def t : Sum Unit Unit := inr unit\n"
+              "def right : (v : Unit) -> Path Unit (elim (fun (t : Sum Unit Unit) => Unit -> Unit) "
+              "(fun a x => x) (fun b x => unit) t v) unit := fun v => refl\n"
+              "def one : (v : Unit) -> Path Unit (elim (fun (u : Unit) => Unit -> Unit) "
+              "(fun x => x) unit v) v := fun v => refl", NULL);
+  ok &= guest("def bad : Unit -> Unit := fun (u : Unit) => elim (fun v => unit) unit u", "TYPE_MISMATCH");
+  ok &= guest("def bad : Unit -> Unit := fun (u : Unit) => "
+              "elim (fun (t : Sum Unit Unit) => Unit) (fun a => a) (fun b => b) u", "TYPE_MISMATCH");
+  ok &= guest("def bad : Unit -> Unit := fun (u : Unit) => "
+              "elim (fun (v : Unit) => Unit) unit (inl u)", "TYPE_INFER");
   ok &= domain("family F := makeF [ i1 -> missing ]", "DOMAIN_FAMILY");
   ok &= domain("family F := makeF [ ]", "DOMAIN_FAMILY");
   /* A path constructor's fields are not record projections: projection
@@ -139,7 +164,8 @@ int main(void) {
   ok &= guest("def keep : Sum Unit Unit -> Sum Unit Unit := fun c => c", NULL);
   ok &= guest("def three : Nat := 3", "REFUSE_KIT");
   /* Signature names cannot become event or state constructors or state
-     projections, including slots that require a program definition. */
+     projections, including slots that require a program definition and the
+     names that the kernel defines (Orbit). */
   ok &= kit("event Commitment", "REFUSE_SIG");
   ok &= kit("event borrow", "REFUSE_SIG");
   ok &= kit("event Agent", "REFUSE_SIG");
@@ -149,9 +175,15 @@ int main(void) {
   ok &= kit("state State := makeState (commit : Nat)", "REFUSE_SIG");
   ok &= kit("state State := makeState (Membership : Nat)", "REFUSE_SIG");
   ok &= kit("state State := makeState (Choice : Nat)", "REFUSE_SIG");
+  ok &= kit("state State := Orbit", "REFUSE_SIG");
+  ok &= kit("event orbitProj", "REFUSE_SIG");
+  ok &= kit("state State := orbitProj", "REFUSE_SIG");
+  ok &= kit("state State := makeState (orbitProj : Nat)", "REFUSE_SIG");
   /* Event fields are local, and trusted domain names remain available. */
   ok &= kit("event Opened (commit : Nat)", NULL);
+  ok &= kit("event Opened (orbitProj : Nat)", NULL);
   ok &= domain("family Local := borrow (commit : Unit)", NULL);
+  ok &= domain("family Local := orbitProj", NULL);
   if (ok) puts("domain regressions: passed");
   return ok ? 0 : 1;
 }
