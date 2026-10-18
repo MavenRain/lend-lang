@@ -270,7 +270,7 @@ for each build), the counts in docs/STATUS.md, and a USER commit.
 | S4 | port orbit-lang 9e28399: Orbit after actChoice (choices only; the M index waits for Obj and act), elim on Sum and Unit: DONE 2026-10-18 | Orbit fold without isSet, wrong boundary, Orbit path at run time |
 | S5 | Glue, ua, uaBeta, hcomp at Glue and U (port of orbit-lang a12973a): DONE 2026-10-18 | Glue boundary mismatch, ua on a non-equivalence |
 | S6 | HIITs, QIITs, dependent elim on a HIT with PathP cases; Membership as a kernel HIT: DONE 2026-10-18 | wrong index in a path constructor, inductive-inductive order, a missing PathP case, admit without `M a ≡ 0` |
-| S7 | DAO prelude: Obj, act, ChoiceRule, Aggregation, Gov, IsFixedPointObj, Config, amendPath; LendingLedger over Membership by ua | a non-invariant constitution, a wrong unit, an exit that does not forfeit, the ∃ of IsSelfConstituting as a Prop |
+| S7 | DAO prelude: Obj, act, ChoiceRule, Aggregation, Gov, IsFixedPointObj, Config, amendPath; LendingLedger over Membership by ua: DONE 2026-10-18, without amendPath (O27) | a non-invariant constitution, a wrong unit, an exit that does not forfeit, the ∃ of IsSelfConstituting as a Prop |
 | S8 | ZK ledger: Pedersen on BN254 in C, Sigma-protocol verifier lowering, zkEquiv, PrivateLoan, borrow, repay, liquidate | known-answer vectors; mutants: wrong opening, range overflow, non-member step, step on a Forfeited position, point not on the curve |
 | S9 | contract end to end: deploy, vote, amend, borrow, repay, liquidate; host and EVM differential; gas table; chain probe | differential rows, revert rows, EIP-170 and EIP-3860 size limits |
 | S10 | regimes (optional, O23), docs, final gate | regime rows |
@@ -520,6 +520,137 @@ USER ruling (S6, 2026-10-18; AskUserQuestion, all recommended):
   parameterized domain family.
 - O21 scope: uniform 1-HITs only.
 
+Builder call (S7, 2026-10-18). Four parts. Kernel survey:
+~/Documents/lend-lang-work/S7-survey-kernel.md. orbit-lang S7 (96c74e1,
+orbit-lang PLAN section 8, "Builder call (S7, 2026-10-18)") has no code,
+thus lend-lang builds the DAO prelude here and uses the orbit-lang B2 text
+as the model. A later slice aligns the two after orbit-lang commits B2.
+
+Part 0, the B4 rows (session 1, DONE). The patch is
+`git -C ~/Documents/orbit-lang diff 8dd82a3 8b11846 -- test/` (4 files,
++39). The end context of test/check/expect.txt is different (the 2
+Membership rows), thus the 2 new lines are appended. The gate is GREEN
+(~/Documents/lend-lang-work/S7-p0-gate.log): check refusals 166, the other
+counts equal to S6. HI2 is KILLED by the fronttool HIT_INDEX row
+(~/Documents/lend-lang-work/S7-p0-HI2.log).
+
+Part 1, the prelude (kernel text). check.c:3512-3530 makes act, Obj,
+ChoiceRule, Aggregation, orbitProjection, Gov, IsFixedPointObj,
+IsSelfConstituting, Config, amendPath and LendingLedger SIG_DEFINED, thus a
+program def of one of them is REFUSE_SIG. The prelude is fixed source text
+with origin ORIGIN_DOMAIN (the splice_after precedent, front.c:47-67),
+spliced after the last program slot that it uses (Agent, Choice, G,
+actChoice, D, Position). Obj has no M index (USER ruling S7).
+
+```text
+Obj                    := Agent -> Choice           -- the S4 domain of Orbit
+act g x                := fun a => actChoice g (x a)
+orbitProjection        := orbitProj                 -- S4
+ChoiceRule X D         := X -> D
+Constitution           := Σ (F : ChoiceRule Obj D), (g : G) (x : Obj) -> Path D (F (act g x)) (F x)
+Aggregation F          := Σ (L : Orbit -> D), (x : Obj) -> Path D (L (orbitProj x)) (F x)
+Gov L                  := fun x => L.1 (orbitProj x)
+IsFixedPointObj F L    := (x : Obj) -> Path D (Gov L x) (F x)
+IsSelfConstituting F L := IsFixedPointObj F L       -- O9: the ∃ is the Σ over L in Config
+Config                 := Σ (M : Membership) Σ (F : ChoiceRule Obj D)
+                          Σ (L : Aggregation F) (IsSelfConstituting F L × LendingLedger M)
+```
+
+Part 2, the ledger (kernel text). With 2, 0 and 1 as in S6 Part 3:
+
+```text
+State    := Sum Position (Sum Position Unit)        -- Active p, Forfeited p, Empty
+Inv b s  := elim on s: Active _ => Path 2 b 1, Forfeited _ => Path 2 b 0, Empty => Unit
+Ledger m := Σ (s : Agent -> State), (a : Agent) -> Inv (m a) (s a)
+LendingLedger := elim (fun _ => Type 0) Ledger
+                   (admit case: ua (admitEquiv ..)) (exit case: ua (exitEquiv ..))
+```
+
+- Inv is a case split into Path 2, thus no empty type is necessary:
+  `Inv 1 (Forfeited p)` is `Path 2 1 0`.
+- admitEquiv uses the premise r: for each b, elim on `r b`. The inl case
+  (b ≡ a) swaps Forfeited p to Active p. The inr case keeps `s b`. The Inv
+  field moves along q (or p) by subst. The equivalence is isoToEquiv with
+  funExt and Σ paths. exitEquiv swaps Active p to Forfeited p. There is no
+  decidable equality and no function update.
+- Gaps (survey items 6 and 7): domain.lang has no isProp Unit, no isProp
+  of a Path in 2 and no transport-cancel lemma. Part 2 adds them as kernel
+  text. Ledger m must be Type 0 (ua and Glue are Type 0 only).
+
+Part 3, amendPath and the laws (guest: examples/dao.lang,
+examples/ledger.lang).
+- amendPath is a Path Config c0 c1. The M face is the Membership path of
+  the admits and exits. The F face is Gov L by definition. The L and sc
+  faces come from transport-fill. The ledger face is the PathP over
+  LendingLedger along the M face (ua).
+- Laws: ⟦amend⟧ = Gov (refl); anonymity (L factors through orbitProj);
+  the gov unit; self-constitution as a PathP over IsFixedPointObj. The
+  uniqueness of descent (law 2) waits (USER ruling S7).
+- Eval rows at closed agents (there is no regularity, survey item 8):
+  transport along an exit at a gives Forfeited p at a, along an admit it
+  gives Active p back, and at a different agent it keeps the state.
+
+Gate rows (no new refusal code, survey item 4):
+- "a non-invariant constitution": refl as the invariance proof of an F
+  that actChoice changes, at Constitution. PATH_END (check.c:486).
+- "a wrong unit": refl at the gov unit path for a G that is not F.
+  PATH_END.
+- "an exit that does not forfeit": an exit case that keeps Active p at a
+  needs a term of `Path 2 0 1`. PATH_END or TYPE_MISMATCH (the row pins the
+  code).
+- "the ∃ of IsSelfConstituting as a Prop": a Config value whose sc field
+  is a Trunc1 witness. TYPE_MISMATCH. A `Prop` use stays NAME_UNKNOWN
+  (reserved, check.c:200-203).
+- Lowering: no change. Σ, Glue and a neutral elim are REFUSE_LOWER, thus
+  S7 has check and eval rows only.
+
+Mutants: one admission mutant for each new site (the prelude splice, the
+ledger splice, Inv at Forfeited, the admit swap branch), with a "b" mutant
+for a row with a second refusal class.
+
+USER ruling (S7, 2026-10-18; AskUserQuestion, all recommended):
+- Obj index: `Obj := Agent -> Choice` (no M index; the S4 Orbit and its
+  rows do not change). Config stays a Σ over Membership, and amendPath is
+  a Path Config. The contract admits only member votes (O12 signatures).
+- Law 2 uniqueness: it waits for the port of orbit-lang S7 B1 (square
+  cases for squash constructors).
+- Member permutation invariance (O8): S9, with orbit-lang O26. S7 checks
+  the actChoice invariance only.
+
+Result (S7, sessions 1 to 9, 2026-10-18). The gate `make -B check` is
+GREEN, exit 0: examples 34, parse refusals 19, check refusals 170,
+kit-only refusals 22, evals 88, lower refusals 16, build checks 33, and
+the other counts equal to S6. The mutant loop kills 6 of 6 mutants
+(docs/STATUS.md section S7). No builder stage completed (Fable xhigh:
+429 in sessions 2, 3, 6 and 8; opus xhigh: `reasoning_extraction` in
+sessions 6 and 8), thus the main loop made each part by hand. In session
+5 the USER applied the session 4 changes to src/front/eval.c and
+src/front/front.c (~/Documents/lend-lang-work/S7-p2-apply.sh), because
+the auto mode classifier refused those edits.
+
+Deviations from the builder call:
+1. The Inv false cases are closed paths (`Path 2 0 1` at Active,
+   `Path 2 1 0` at Forfeited). Thus isPropInv needs no `isSet 2`.
+2. admit and exit share stepEquiv, because holdSwap is an involution.
+3. The names are holdSwap, holdSwapSwap, holdSwap01 and holdSwap10.
+   `swap` is a domain constructor (REFUSE_NAME).
+4. LendingLedger is the plain ua form (no eta).
+5. eval.c conv_values has the fast path
+   `same = a == b || conv_loop(m, level, a, b);` (USER option 1,
+   2026-10-18). Without it, the check of a closed Config value reaches
+   the arena limit. Known limits: oomv-d (an inline Σ annotation gives
+   two pointers) and oomv-a2 (`refl : Path (Membership -> Type 0) LL LL`).
+6. The sc row uses `trunc1 T sc0`, because trunc1 takes the type
+   explicitly.
+7. amendPath is NOT POSSIBLE in this kernel. The ledger fill (transp
+   over LendingLedger along exitOne) reaches the arena limit. The two
+   smallest shapes are oomv-e (refl at the exitEquiv value, an Equiv
+   conv) and oomv-f (`refl : Path Config cA cA`, M constant). The
+   forward map alone checks, thus the limit is in the conv of the
+   isEquiv part. examples/dao.lang has the laws amendGov, anon0, govUnit
+   and scPath (all ok) and a comment that tells why it has no amendPath.
+   O27 has the options. S7 has no kernel fix.
+
 ## 9. Open items
 
 USER ruling (S1, 2026-10-17): every default below is RULED. Where an item
@@ -602,3 +733,12 @@ has options, (a) is the ruling. O20 is a USER ruling from the request.
   commits; it does not change orbit-lang.
 - O26 Off-chain commands: `langc prove` writes the calldata of vote,
   borrow and repay; `langc run` evaluates steps and amendments in the host.
+- O27 Conv limit (S7; NOT RULED, the USER rules it at the start of S8):
+  the conv OOM family oomv-a2, oomv-d, oomv-e and oomv-f blocks
+  amendPath (section 8, "Result (S7, ...)", deviation 7). Options, no
+  ruling: (a) the CONV_CLOS same_closure test
+  (~/Documents/lend-lang-work/S7-p2-scratch/oom-patch.py, block 2), the
+  known fix candidate; (b) a conv fast path for the Equiv or the Glue of
+  a ledger step: compare the kernel def and its arguments before the
+  unfold (a hypothesis, not tested); (c) keep amendPath out, with the
+  laws only.

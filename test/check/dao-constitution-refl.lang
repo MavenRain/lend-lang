@@ -1,0 +1,15 @@
+-- A constitution must be invariant under actChoice. Here F reads the
+-- choice of agent inl unit, and actChoice (inr unit) flips that choice,
+-- so refl is not a path from F (act g x) to F x.
+def Agent : Type 0 := Sum Unit Unit
+def Choice : Type 0 := Sum Unit Unit
+def D : Type 0 := Choice
+def G : Type 0 := Sum Unit Unit
+
+def flip : Choice -> Choice := fun (c : Choice) => either (fun (u : Unit) => inr unit) (fun (u : Unit) => inl unit) c
+
+def actChoice : G -> Choice -> Choice :=
+  fun (g : G) (c : Choice) => either (fun (u : Unit) => c) (fun (u : Unit) => flip c) g
+
+def F : ChoiceRule Obj D := fun (x : Obj) => x (inl unit)
+def bad : Constitution := pack F (fun (g : G) (x : Obj) => refl)

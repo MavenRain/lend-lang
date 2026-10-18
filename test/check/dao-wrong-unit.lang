@@ -1,0 +1,23 @@
+-- A wrong gov unit. Gov with L0 gives F0, thus refl is not a path from Gov F0 L0
+-- to F1, the rule that gives inr unit. The checker refuses the end of the path.
+-- With F1 := the rule that gives inl unit, the same file checks.
+def Agent : Type 0 := Sum Unit Unit
+def Choice : Type 0 := Sum Unit Unit
+def D : Type 0 := Choice
+def G : Type 0 := Sum Unit Unit
+def Position : Type 0 := Prod Unit Unit
+
+def flip : Choice -> Choice := fun (c : Choice) => either (fun (u : Unit) => inr unit) (fun (u : Unit) => inl unit) c
+
+def actChoice : G -> Choice -> Choice :=
+  fun (g : G) (c : Choice) => either (fun (u : Unit) => c) (fun (u : Unit) => flip c) g
+
+-- F0: the constant rule. actChoice does not change it, so refl is its invariance proof.
+def F0 : ChoiceRule Obj D := fun (x : Obj) => inl unit
+def c0 : Constitution := pack F0 (fun (g : G) (x : Obj) => refl)
+
+-- L0: the constant rule on orbits. It factors F0 through orbitProj.
+def L0 : Aggregation F0 := pack (fun (o : Orbit) => inl unit) (fun (x : Obj) => refl)
+
+def F1 : ChoiceRule Obj D := fun (x : Obj) => inr unit
+def wrongUnit : Path (ChoiceRule Obj D) (Gov F0 L0) F1 := refl

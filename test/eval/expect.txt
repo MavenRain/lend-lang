@@ -83,3 +83,6 @@ membership copyExitEnd => memberSet (fun b => inl unit)
 membership windAdmit => fun i => loop i
 membership windExit => fun i => loop ~i
 membership windAdmitEnd => base
+ledger exitAt => inr (inl (pair unit unit))
+ledger exitOther => inr (inr unit)
+ledger backAt => inl (pair unit unit)

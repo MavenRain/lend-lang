@@ -1,0 +1,20 @@
+-- The self-constitution field of a Config is the proof, not its
+-- truncation. Here the field is trunc1 of sc0, so the Config refuses it.
+-- With sc0 as the field, the same Config checks.
+def Agent : Type 0 := Sum Unit Unit
+def Choice : Type 0 := Sum Unit Unit
+def D : Type 0 := Choice
+def G : Type 0 := Sum Unit Unit
+def Position : Type 0 := Prod Unit Unit
+
+def flip : Choice -> Choice := fun (c : Choice) => either (fun (u : Unit) => inr unit) (fun (u : Unit) => inl unit) c
+
+def actChoice : G -> Choice -> Choice :=
+  fun (g : G) (c : Choice) => either (fun (u : Unit) => c) (fun (u : Unit) => flip c) g
+
+def F0 : ChoiceRule Obj D := fun (x : Obj) => inl unit
+def L0 : Aggregation F0 := pack (fun (o : Orbit) => inl unit) (fun (x : Obj) => refl)
+def sc0 : IsSelfConstituting F0 L0 := fun (x : Obj) => refl
+
+def bad : Config :=
+  pack (memberSet (fun (b : Agent) => inl unit)) (pack F0 (pack L0 (pair (trunc1 (IsSelfConstituting F0 L0) sc0) (pack (fun (b : Agent) => inr (inr unit)) (fun (b : Agent) => unit)))))

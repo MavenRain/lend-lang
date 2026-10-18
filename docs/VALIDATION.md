@@ -1,12 +1,12 @@
 # Validation
 
 Date: 2026-10-18. tcc: 0.9.28rc. evm (go-ethereum): 1.14.12. Host
-executable: `build/langc` at 4484ce6 plus the S6 changes.
+executable: `build/langc` at 1d7369a plus the S7 changes.
 
 `make -B check` passes: it builds `langc` and the test tools with tcc,
 runs the clang `-Wall -Wextra -Wswitch-enum -Werror` check, and runs the
-gate scripts. It runs 32 examples, 19 parse refusals, 164 check
-refusals, 22 kit-only refusals, 85 evals, 5 runs, 10 run refusals, 8
+gate scripts. It runs 34 examples, 19 parse refusals, 170 check
+refusals, 22 kit-only refusals, 88 evals, 5 runs, 10 run refusals, 8
 asmtool checks, 3 builds, 16 lower refusals, 33 build checks, 20
 dispatch checks, 43 evm steps, 18 precompile steps, 13 mock rows, 15
 diff rows, 24 emit regressions and the review, domain, path, fuel,
@@ -155,3 +155,31 @@ Unit interpretation when a later family argument applies its result.
 The C fronttool regressions cover both fixes, normal-form round trips,
 recursive point and path cases, and elimination of an earlier family
 inside a later boundary. `make -B check` passes after these fixes.
+
+The S7 work adds the DAO prelude and the lending ledger as kernel text
+(PLAN section 8, "Builder call (S7, 2026-10-18)"). Part 0 ports the
+orbit-lang B4 test rows (8dd82a3..8b11846). The fronttool HIT_INDEX row
+kills HI2, the S6 survivor. front.c puts kernel/dao.lang (Obj, act,
+orbitProjection, ChoiceRule, Constitution, Aggregation, Gov,
+IsFixedPointObj, IsSelfConstituting) after the last program slot that
+it uses, and kernel/ledger.lang (Holding, Inv, Ledger, stepEquiv,
+admitEquiv, exitEquiv, LendingLedger, Config) after Position and
+IsSelfConstituting. eval.c conv_values compares two equal pointers
+before the conv loop (USER option 1). The review adds the examples
+`dao` and `ledger`, the check refusals `dao-constitution-refl`,
+`ledger-exit-keeps` and `dao-wrong-unit` (PATH_END) and `dao-sc-prop`
+(TYPE_MISMATCH), and 3 evals (exitAt, exitOther, backAt). The laws
+amendGov, anon0, govUnit and scPath check in examples/dao.lang.
+amendPath is not in S7: the conv of the Equiv of a ledger step and the
+conv of a Config value reach the arena limit (PLAN O27, not ruled).
+Mutants P1 to P4, P5b and P6 are killed (6 of 6, 1 admission). P3 and P4
+are killed by the check of the kernel text, not by a guest refusal row
+(docs/STATUS.md section S7).
+
+The S7 review keeps REFUSE_SIG stable after a kernel prelude installs a
+defined signature name. Previously, a later program definition,
+constructor or projection with that name gave REFUSE_NAME. The checker
+now applies signature reservations before the ordinary name check.
+The C fronttool covers the ten new installed signature names in all
+three declaration positions, with controls that accept the trusted
+definitions and ordinary guest code.

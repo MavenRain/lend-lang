@@ -1,0 +1,46 @@
+-- The ledger along Membership paths (slice S7, PLAN section 8, Part 3), guest mode.
+-- The slots are the slots of dao.lang. The kernel gives Membership after Agent,
+-- the DAO prelude after actChoice, and the ledger after Position.
+-- With 2 := Sum Unit Unit, 0 := inl unit and 1 := inr unit, a holding is
+-- Active p (inl p), Forfeited p (inr (inl p)) or Empty (inr (inr unit)).
+def Agent : Type 0 := Sum Unit Unit
+def Choice : Type 0 := Sum Unit Unit
+def D : Type 0 := Choice
+def G : Type 0 := Sum Unit Unit
+def Position : Type 0 := Prod Unit Unit
+
+def flip : Choice -> Choice := fun (c : Choice) => either (fun (u : Unit) => inr unit) (fun (u : Unit) => inl unit) c
+
+def actChoice : G -> Choice -> Choice :=
+  fun (g : G) (c : Choice) => either (fun (u : Unit) => c) (fun (u : Unit) => flip c) g
+
+-- nobody has no member. onlyOne has the agent inr unit as its one member.
+def nobody : Agent -> Sum Unit Unit := fun (b : Agent) => inl unit
+def onlyOne : Agent -> Sum Unit Unit := fun (b : Agent) => either (fun (u : Unit) => inl unit) (fun (u : Unit) => inr unit) b
+def sameElse : (b : Agent) -> Sum (Path Agent b (inr unit)) (Path (Sum Unit Unit) (nobody b) (onlyOne b)) :=
+  fun (b : Agent) => elim (fun (c : Agent) => Sum (Path Agent c (inr unit)) (Path (Sum Unit Unit) (nobody c) (onlyOne c)))
+    (fun (u : Unit) => inr refl)
+    (fun (u : Unit) => elim (fun (w : Unit) => Sum (Path Agent (inr w) (inr unit)) (Path (Sum Unit Unit) (nobody (inr w)) (onlyOne (inr w)))) (inl refl) u) b
+def sameElseBack : (b : Agent) -> Sum (Path Agent b (inr unit)) (Path (Sum Unit Unit) (onlyOne b) (nobody b)) :=
+  fun (b : Agent) => elim (fun (c : Agent) => Sum (Path Agent c (inr unit)) (Path (Sum Unit Unit) (onlyOne c) (nobody c)))
+    (fun (u : Unit) => inr refl)
+    (fun (u : Unit) => elim (fun (w : Unit) => Sum (Path Agent (inr w) (inr unit)) (Path (Sum Unit Unit) (onlyOne (inr w)) (nobody (inr w)))) (inl refl) u) b
+def admitOne : Path Membership (memberSet nobody) (memberSet onlyOne) :=
+  fun (i : I) => admit nobody onlyOne (inr unit) refl refl sameElse i
+def exitOne : Path Membership (memberSet onlyOne) (memberSet nobody) :=
+  fun (i : I) => exit onlyOne nobody (inr unit) refl refl sameElseBack i
+
+-- l1: the ledger at onlyOne. The member inr unit holds Active p0, the agent
+-- inl unit holds Empty, thus each Inv is Unit.
+def p0 : Position := pair unit unit
+def hold1 : Agent -> Holding := fun (b : Agent) => either (fun (u : Unit) => inr (inr unit)) (fun (u : Unit) => inl p0) b
+def l1 : Ledger onlyOne :=
+  pack hold1 (fun (b : Agent) => elim (fun (c : Agent) => Inv (onlyOne c) (hold1 c)) (fun (u : Unit) => unit) (fun (u : Unit) => unit) b)
+
+-- The exit of inr unit forfeits its position by transport. The other agent keeps its state.
+def lExit : Ledger nobody := transp (fun (i : I) => LendingLedger (exitOne @ i)) i0 l1
+def exitAt : Holding := witness lExit (inr unit)
+def exitOther : Holding := witness lExit (inl unit)
+-- The admit of inr unit gives the position back.
+def lBack : Ledger onlyOne := transp (fun (i : I) => LendingLedger (admitOne @ i)) i0 lExit
+def backAt : Holding := witness lBack (inr unit)

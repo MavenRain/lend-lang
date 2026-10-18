@@ -1,0 +1,44 @@
+-- The DAO prelude (slice S7, PLAN section 8, Part 1), guest mode: the design signature slots and actChoice of orbit.lang.
+-- The kernel gives Obj, act, ChoiceRule, Constitution, Aggregation, Gov, IsFixedPointObj and IsSelfConstituting after the last slot.
+-- With the slot Position, the kernel also gives the ledger (Holding, Inv, Ledger, LendingLedger) and Config after IsSelfConstituting (Part 2).
+def Agent : Type 0 := Sum Unit Unit
+def Choice : Type 0 := Sum Unit Unit
+def D : Type 0 := Choice
+def G : Type 0 := Sum Unit Unit
+def Position : Type 0 := Prod Unit Unit
+
+def flip : Choice -> Choice := fun (c : Choice) => either (fun (u : Unit) => inr unit) (fun (u : Unit) => inl unit) c
+
+def actChoice : G -> Choice -> Choice :=
+  fun (g : G) (c : Choice) => either (fun (u : Unit) => c) (fun (u : Unit) => flip c) g
+
+-- F0: the constant rule. actChoice does not change it, so refl is its invariance proof.
+def F0 : ChoiceRule Obj D := fun (x : Obj) => inl unit
+def c0 : Constitution := pack F0 (fun (g : G) (x : Obj) => refl)
+
+-- L0: the constant rule on orbits. It factors F0 through orbitProj.
+def L0 : Aggregation F0 := pack (fun (o : Orbit) => inl unit) (fun (x : Obj) => refl)
+
+-- Gov F0 L0 is the rule that L0 gives, and it is F0 at each assignment (the fixed point).
+def gov0 : ChoiceRule Obj D := Gov F0 L0
+def sc0 : IsSelfConstituting F0 L0 := fun (x : Obj) => refl
+
+-- cfg0: a closed Config. The member set has no member, and each agent holds Empty, thus each Inv is Unit.
+def cfg0 : Config :=
+  pack (memberSet (fun (b : Agent) => inl unit)) (pack F0 (pack L0 (pair sc0 (pack (fun (b : Agent) => inr (inr unit)) (fun (b : Agent) => unit)))))
+
+-- The laws of the DAO at F0 and L0 (slice S7, PLAN section 8, Part 3).
+-- The amend = Gov law: the rule that Gov gives from F0 and L0 is F0. refl is the proof.
+def amendGov : Path (ChoiceRule Obj D) (Gov F0 L0) F0 := refl
+
+-- Anonymity: the first part of L0 factors through orbitProj. Each x gives a path.
+def anon0 : (x : Obj) -> Path D (witness L0 (orbitProj x)) (F0 x) := fun (x : Obj) => refl
+
+-- The gov unit: Gov with L0 gives F0 back at each x. refl is the proof.
+def govUnit : (x : Obj) -> Path D (Gov F0 L0 x) (F0 x) := fun (x : Obj) => refl
+
+-- Self-constitution as a PathP over IsFixedPointObj: the constant path at sc0.
+def scPath : PathP (fun (i : I) => IsFixedPointObj F0 L0) sc0 sc0 := fun (i : I) => sc0
+
+-- This file has no amendPath (a Path Config). The conv of a Config value, and the conv
+-- of the Equiv of a ledger step, reach the arena limit. The S7 record gives the shapes.

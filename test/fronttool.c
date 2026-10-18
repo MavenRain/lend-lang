@@ -10,11 +10,12 @@
 /* checked parses TEXT with ORIGIN and checks it in MODE. A domain row is
    trusted text in kit mode; a guest row (orbit-lang S3) is program text in
    guest mode. */
-static int checked(const char *text, Origin origin, CheckMode mode, const char *want) {
+static int checked_in(const char *prelude, const char *text, Origin origin, CheckMode mode, const char *want) {
   Arena arena;
   Diag diag;
   TokenList tokens = {0};
   TokenList kit_tokens = {0};
+  TokenList prelude_tokens = {0};
   DeclList decls = {0};
   Machine machine;
   arena_init(&arena, (size_t)1 << 24);
@@ -23,6 +24,9 @@ static int checked(const char *text, Origin origin, CheckMode mode, const char *
   if (origin == ORIGIN_PROGRAM)
     ok = lex_source(&arena, CONTRACT_SOURCE_NAME, contract_source, contract_source_len, &kit_tokens, &diag)
       && parse_source(&arena, CONTRACT_SOURCE_NAME, ORIGIN_KIT, &kit_tokens, &decls, &diag);
+  if (prelude != NULL)
+    ok = ok && lex_source(&arena, "test-kernel", prelude, strlen(prelude), &prelude_tokens, &diag)
+      && parse_source(&arena, "test-kernel", ORIGIN_DOMAIN, &prelude_tokens, &decls, &diag);
   ok = ok && lex_source(&arena, "test-domain", text, strlen(text), &tokens, &diag)
     && parse_source(&arena, "test-domain", origin, &tokens, &decls, &diag)
     && check_program(&arena, &decls, &machine, &diag, mode);
@@ -38,6 +42,33 @@ static int checked(const char *text, Origin origin, CheckMode mode, const char *
   }
   arena_release(&arena);
   return passed;
+}
+
+static int checked(const char *text, Origin origin, CheckMode mode, const char *want) {
+  return checked_in(NULL, text, origin, mode, want);
+}
+
+/* Installed signature names keep their signature refusal, including when
+   used as program constructors or projections. The trusted prefix models
+   the kernel declarations inserted before the program declaration. */
+static int installed_signatures(void) {
+  static const char *const names[] = {"Obj", "act", "orbitProjection", "ChoiceRule", "Aggregation", "Gov",
+    "IsFixedPointObj", "IsSelfConstituting", "LendingLedger", "Config"};
+  char prelude[128];
+  char program[128];
+  size_t i;
+  int ok = 1;
+  for (i = 0; i < sizeof names / sizeof names[0]; i++) {
+    snprintf(prelude, sizeof prelude, "def %s : Type 0 := Unit\n", names[i]);
+    ok &= checked_in(prelude, "def keep : Unit := unit", ORIGIN_PROGRAM, CHECK_GUEST, NULL);
+    snprintf(program, sizeof program, "def %s : Type 0 := Unit", names[i]);
+    ok &= checked_in(prelude, program, ORIGIN_PROGRAM, CHECK_GUEST, "REFUSE_SIG");
+    snprintf(program, sizeof program, "state State := %s", names[i]);
+    ok &= checked_in(prelude, program, ORIGIN_PROGRAM, CHECK_KIT, "REFUSE_SIG");
+    snprintf(program, sizeof program, "state State := makeState (%s : Nat)", names[i]);
+    ok &= checked_in(prelude, program, ORIGIN_PROGRAM, CHECK_KIT, "REFUSE_SIG");
+  }
+  return ok;
 }
 
 static int domain(const char *text, const char *want) {
@@ -162,6 +193,9 @@ int main(void) {
   ok &= domain("family Sz := zs | ss (szPrev : Sz)\n"
                "family V : Sz -> Type 0 := vnil | vcons (vSize : Sz) (vTail : V vSize) : V (ss vSize)", "HIT_INDEX");
   ok &= domain("family P0 : Q0 -> Type 0 := p0 : P0 q0 and Q0 := q0", "BLOCK_ORDER");
+  /* hiit-wrong-head: the result of a constructor is not its family. */
+  ok &= domain("family Sz := zs | ss (szPrev : Sz)\n"
+               "family V : Sz -> Type 0 := vnil : Sz | vcons (vSize : Sz) (vTail : V vSize) : V (ss vSize)", "HIT_INDEX");
   ok &= domain("family W : Prop -> Type 0 := w0", "NAME_UNKNOWN");
   ok &= domain("family Ch := gen | adopt (adoptOf : Ch) (adoptBy : Rt adoptOf) "
                "and Rt : Ch -> Type 0 := rat (ratOf : Ch) : Rt ratOf", NULL);
@@ -192,6 +226,17 @@ int main(void) {
   ok &= domain("family Even := ez | es (oddPrev : Odd) and Odd := os (evenPrev : Even)\n"
                "def point : Path Nat (fold Nat Unit 0 (fun u => 1) (fun n => unit) (es (os ez))) 1 := refl\n"
                "def other : Path Unit (fold Nat Unit 0 (fun u => 1) (fun n => unit) (os ez)) unit := refl", NULL);
+  /* A recursive field of a sibling sort is typed at the target of that
+     sort, and it folds at that sort. */
+  ok &= domain("family Even := ez | es (oddPrev : Odd) and Odd := os (evenPrev : Even)\n"
+               "def one : Path Nat (fold Nat Unit 0 (fun (u : Unit) => 1) (fun (n : Nat) => unit) (es (os ez))) 1 := refl", NULL);
+  ok &= domain("family Even := ez | es (oddPrev : Odd) and Odd := os (evenPrev : Even)\n"
+               "def two : Path Nat (fold Nat Nat 0 (fun (u : Nat) => natAdd u 1) (fun (n : Nat) => natAdd n 1) (es (os ez))) 2 := refl", NULL);
+  /* block-fold-extra: a block fold with an extra argument before the
+     value. Without the arity test the extra argument is never read. */
+  ok &= domain("family Even := ez | es (oddPrev : Odd) and Odd := os (evenPrev : Even)\n"
+               "def bad : Nat := fold (Even -> Nat) Unit (fun (e : Even) => 0) (fun (u : Unit) => fun (e : Even) => 1) "
+               "(fun (g : Even -> Nat) => unit) unit ez", "TYPE_MISMATCH");
   /* A path field over a sibling sort folds at that sibling. */
   ok &= domain("family Box := box (boxLeft : Item) (boxRight : Item) (boxPath : Path Item boxLeft boxRight) "
                "and Item := item\n"
@@ -284,6 +329,7 @@ int main(void) {
   ok &= kit("event Opened (orbitProj : Nat)", NULL);
   ok &= domain("family Local := borrow (commit : Unit)", NULL);
   ok &= domain("family Local := orbitProj", NULL);
+  ok &= installed_signatures();
   if (ok) puts("domain regressions: passed");
   return ok ? 0 : 1;
 }

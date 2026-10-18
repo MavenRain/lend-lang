@@ -620,3 +620,123 @@ INVALID.
 | port, O21, Membership, rows | wf-builder Fable xhigh | died in session 1, 429, before a file change |
 | port, O21, Membership, rows | wf-builder opus xhigh | died in session 1, `reasoning_extraction`, before a file change |
 | sessions 1 to 4 | main loop | by hand; the session 4 records by a wf-closer from fixed text |
+
+## S7
+
+S7 adds the DAO prelude and the lending ledger on 1d7369a, the USER S6
+commit. orbit-lang S7 (96c74e1) has no code, thus lend-lang builds its
+own prelude and uses the orbit-lang B2 text as the model. PLAN section
+8, "Builder call (S7, 2026-10-18)", has the design, and "Result (S7,
+...)" has the deviations.
+
+### Counts
+
+| Gate line | lend-lang S6 | Part 0 (session 1) | Part 1 (session 2) | Part 2 (session 5) | lend-lang S7 |
+|---|---|---|---|---|---|
+| examples | 32 | 32 | 33 | 33 | 34 |
+| parse refusals | 19 | 19 | 19 | 19 | 19 |
+| check refusals | 164 | 166 | 167 | 169 | 170 |
+| kit-only refusals | 22 | 22 | 22 | 22 | 22 |
+| evals | 85 | 85 | 85 | 85 | 88 |
+| runs, run refusals | 5, 10 | 5, 10 | 5, 10 | 5, 10 | 5, 10 |
+| asmtool checks | 8 | 8 | 8 | 8 | 8 |
+| builds | 3 | 3 | 3 | 3 | 3 |
+| lower refusals | 16 | 16 | 16 | 16 | 16 |
+| build checks | 33 | 33 | 33 | 33 | 33 |
+| dispatch | 20 | 20 | 20 | 20 | 20 |
+
+Part 0 adds 2 check refusals (block-fold-no-squash, block-fold-target)
+and a fronttool HIT_INDEX row. Part 1 adds 1 example (dao) and 1 check
+refusal (dao-constitution-refl). Part 2 adds 2 check refusals
+(ledger-exit-keeps, dao-sc-prop). Part 3 adds 1 example (ledger), 1
+check refusal (dao-wrong-unit) and 3 evals (exitAt, exitOther, backAt).
+The evm steps (43) and the other counts equal S6. The S7 gate runner is
+~/Documents/lend-lang-work/S7-p3-gate.sh.
+
+### Parts
+
+- Part 0 (session 1): the patch is
+  `git -C ~/Documents/orbit-lang diff 8dd82a3 8b11846 -- test/` (4
+  files, +39). The end context of test/check/expect.txt is different,
+  thus the 2 new lines are appended. The fronttool HIT_INDEX row kills
+  HI2, the S6 survivor (~/Documents/lend-lang-work/S7-p0-HI2.log).
+- Part 1 (session 2): front.c `dao_source` (kernel/dao.lang,
+  ORIGIN_DOMAIN) has Obj, act, orbitProjection, ChoiceRule,
+  Constitution, Aggregation, Gov, IsFixedPointObj and
+  IsSelfConstituting. `splice_after_all` puts it after the last of the
+  program slots in DAO_AFTER (Agent, Choice, G, D, actChoice,
+  orbitProj).
+- Part 2 (sessions 3 to 5): front.c `ledger_source` (kernel/ledger.lang)
+  has Holding, Inv, Ledger, the isProp lemmas, invPathP, ledgerPath,
+  holdSwap, sel, selSel, fwdInv, bwdInv, stepEquiv, admitEquiv,
+  exitEquiv, LendingLedger and Config. It goes after the last of
+  LEDGER_AFTER (Position, IsSelfConstituting). eval.c conv_values
+  compares the two pointers before conv_loop (deviation 5).
+- Part 3 (sessions 6 and 7): examples/ledger.lang transports l1 (at
+  onlyOne) along exitOne with
+  `transp (fun i => LendingLedger (exitOne @ i)) i0 l1`.
+  examples/dao.lang has the laws amendGov, anon0, govUnit and scPath.
+
+| Row | Code | PLAN gate row |
+|---|---|---|
+| dao-constitution-refl | PATH_END | a non-invariant constitution |
+| ledger-exit-keeps | PATH_END | an exit that does not forfeit |
+| dao-sc-prop | TYPE_MISMATCH | the ∃ of IsSelfConstituting as a Prop (`trunc1 T sc0`) |
+| dao-wrong-unit | PATH_END | a wrong unit; the control (F1 gives inl unit) is ok |
+
+| Eval row | Result | Reading |
+|---|---|---|
+| ledger exitAt | `inr (inl (pair unit unit))` | Forfeited p at the agent of the exit |
+| ledger exitOther | `inr (inr unit)` | Empty at another agent: no change |
+| ledger backAt | `inl (pair unit unit)` | Active p again after the admit |
+
+### amendPath
+
+amendPath is not in S7 (PLAN deviation 7, open item O27). The record is
+~/Documents/lend-lang-work/S7-p3-record.md, and the probes are in
+~/Documents/lend-lang-work/S7-p3-scratch/.
+
+- The fill `transp (fun j => LendingLedger (exitOne @ (i /\ j))) (~i) l1`
+  passes rule_transp, but reaches the arena limit in 0.7 s. Each
+  endpoint alone checks.
+- oomv-e (r12): `refl` at the exitEquiv value, at its Equiv type,
+  reaches the arena limit. `refl` at its forward map (r13) checks. Thus
+  the limit is in the conv of the isEquiv part.
+- oomv-f (a1): `refl : Path Config cA cA` (closed, M constant) reaches
+  the arena limit. Each part alone checks.
+- The kernel has no regularity (r6): transp along a constant line at i0
+  is not its argument (PATH_END).
+
+### Mutants
+
+~/Documents/lend-lang-work/S7-mutants.{sh,log}. fmut() is a fixed-string
+replace (awk -v), with `make -B` per build. Before the run, each anchor
+count is 1, and the pristine build gives each row and eval as expected.
+
+| Id | Target | Change | Result | Killer |
+|---|---|---|---|---|
+| P1 | front.c:69 DAO_AFTER | the splice looks for `orbitProjX` | KILLED | dao.lang: NAME_UNKNOWN at F0 (unknown name ChoiceRule) |
+| P2 | front.c:227 LEDGER_AFTER | the splice looks for `IsSelfConstitutingX` | KILLED | ledger.lang: NAME_UNKNOWN at hold1 (unknown name Holding) |
+| P3 | front.c:90 ledger_source Inv | Forfeited p at a member is Unit, not `Path 2 1 0` | KILLED | the kernel text: TYPE_MISMATCH at isPropInv (ledger.lang and dao.lang) |
+| P4 | front.c:132 ledger_source sel | the swap branch keeps h (no holdSwap) | KILLED | the kernel text: TYPE_MISMATCH at selSel; the eval row ledger exitAt differs |
+| P5b | check.c:486 end_fail | PATH_END never fires | KILLED | dao-wrong-unit, ledger-exit-keeps and dao-constitution-refl admitted |
+| P6 | eval.c:3322 conv_values | no `a == b` test | KILLED | dao.lang: OOM at cfg0 (the arena limit, 1 GB) |
+
+The loop kills 6 of 6 mutants with 1 admission mutant (P5b). P3 and P4
+are killed by the check of the kernel text, not by a guest refusal row:
+the prelude is checked with each program, thus each program that has
+the prelude fails. P5b is the "b" mutant: no S7 PATH_END row meets a
+second refusal class. The P6 arena limit (1 GB) is in the 4 GB rule.
+Each mutated file is restored. The shasums and
+`git diff --stat src/` are equal before and after the loop. No mutant
+is INVALID.
+
+### Builders
+
+| Stage | Tier | Result |
+|---|---|---|
+| Part 1 probe | wf-builder Fable xhigh | died in session 2, 429, before a file change |
+| Part 2 probe | wf-builder Fable xhigh | died in session 3, 429, before a file change |
+| Part 3 | wf-builder Fable xhigh, then opus xhigh | died in session 6 (429; `reasoning_extraction`), before a file change |
+| records, stage | wf-builder Fable xhigh, then opus xhigh | died in session 8 (429; `reasoning_extraction`), before a file change |
+| sessions 1 to 9 | main loop | by hand; the USER applied the session 4 src changes (S7-p2-apply.sh) |

@@ -2886,7 +2886,7 @@ static int sig_member_free(Checker *c, const char *name, Origin origin);
 static int check_field(Checker *c, uint32_t fam, const Field *field, FieldInfo *out, uint32_t earlier) {
   uint64_t level = 0;
   const Core *t;
-  if (!name_free(c, field->name) || !sig_member_free(c, field->name, c->m->families[fam].origin))
+  if (!sig_member_free(c, field->name, c->m->families[fam].origin) || !name_free(c, field->name))
     return 0;
   c->self_uses = 0;
   c->field_base = c->level - earlier;
@@ -3088,7 +3088,7 @@ static int check_ctor(Checker *c, uint32_t fam, const Ctor *ctor, uint32_t slot)
   size_t j;
   if (fields == NULL)
     return FAIL(c, "OOM", "out of memory");
-  if (!name_free(c, ctor->name) || !sig_member_free(c, ctor->name, m->families[fam].origin))
+  if (!sig_member_free(c, ctor->name, m->families[fam].origin) || !name_free(c, ctor->name))
     return 0;
   for (j = 0; j < ctor->field_count; j++) {
     int interval = is_interval(c, ctor->fields[j].type);
@@ -3597,13 +3597,16 @@ static int check_sig(Checker *c, const Decl *d, const Value *tv) {
   return FAIL(c, "REFUSE_SIG", "%s is a %s name of the design signature (PLAN section 3), reserved until a later slice gives it", d->name, SIGNATURE[i].kind == SIG_DEFINED ? "defined" : "primitive");
 }
 
-/* The kernel gives Orbit and orbitProj after actChoice (orbit-lang S4, PLAN
-   section 8). A program definition of either name is REFUSE_SIG, before the
-   name check, so the code is the same before and after actChoice. */
+/* Defined signature names are reserved before the ordinary name check,
+   so installing a kernel prelude does not change their refusal code. */
 static int kernel_sig(Checker *c, const Decl *d) {
-  if (d->origin != ORIGIN_PROGRAM || (strcmp(d->name, "Orbit") != 0 && strcmp(d->name, "orbitProj") != 0))
+  uint32_t i;
+  if (d->origin != ORIGIN_PROGRAM)
     return 1;
-  return FAIL(c, "REFUSE_SIG", "%s is a defined name of the design signature (PLAN section 3); the kernel gives it after actChoice", d->name);
+  for (i = 0; i < SIG_COUNT; i++)
+    if (SIGNATURE[i].kind == SIG_DEFINED && strcmp(SIGNATURE[i].name, d->name) == 0)
+      return FAIL(c, "REFUSE_SIG", "%s is a defined name of the design signature (PLAN section 3); only the kernel can supply it", d->name);
+  return 1;
 }
 
 static int check_def(Checker *c, const Decl *d) {

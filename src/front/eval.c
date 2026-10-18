@@ -3314,7 +3314,12 @@ int conv_values(Machine *m, uint32_t level, const Value *a, const Value *b) {
   int same;
   if (a == NULL || b == NULL || !enter(m))
     return 0;
-  same = conv_loop(m, level, a, b);
+  /* Two values are equal when their normal forms are equal, thus a value
+     is always equal to itself. This test stops a full compare of a type
+     with itself: the compare of Config with itself goes under the
+     Membership binder and quotes the isoToEquiv proof of the ledger, and
+     that is more than the arena limit (lend-lang S7 Part 2). */
+  same = a == b || conv_loop(m, level, a, b);
   m->depth--;
   return same;
 }

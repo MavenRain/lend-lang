@@ -1,0 +1,16 @@
+-- An exit that does not forfeit. At the member bit inr unit, an Active
+-- holding has the Inv Unit. At the bit inl unit, an Active holding has the
+-- Inv Path (Sum Unit Unit) (inl unit) (inr unit), so refl is not a term of it.
+def Agent : Type 0 := Sum Unit Unit
+def Choice : Type 0 := Sum Unit Unit
+def D : Type 0 := Choice
+def G : Type 0 := Sum Unit Unit
+def Position : Type 0 := Prod Unit Unit
+
+def flip : Choice -> Choice := fun (c : Choice) => either (fun (u : Unit) => inr unit) (fun (u : Unit) => inl unit) c
+
+def actChoice : G -> Choice -> Choice :=
+  fun (g : G) (c : Choice) => either (fun (u : Unit) => c) (fun (u : Unit) => flip c) g
+
+def bad : (p : Position) -> Inv (inr unit) (inl p) -> Inv (inl unit) (inl p) :=
+  fun (p : Position) (k : Inv (inr unit) (inl p)) => refl
