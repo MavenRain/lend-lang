@@ -263,7 +263,7 @@ for each build), the counts in docs/STATUS.md, and a USER commit.
 |---|---|---|
 | S0 | seed: design, plan, kit scaffold | kit gate GREEN |
 | S1 | rulings on O1 to O26: DONE 2026-10-17, all defaults | none |
-| S2 | port orbit-lang 7734007 (kernel, precompiles, sample domain removed) | the orbit-lang S2 Prop-like refusal rows; precompile vectors |
+| S2 | port orbit-lang 7734007 (kernel, precompiles, sample domain removed): DONE 2026-10-17 | the orbit-lang S2 Prop-like refusal rows; precompile vectors |
 | S3 | base-span pruning (mechanism of orbit-lang 3a1ba76); the lend-lang signature declared | REFUSE_KIT rows for each kit name and sealed-lang base op; REFUSE_SIG rows for the lend-lang signature |
 | S4 | port orbit-lang 9e28399: Orbit M after act, elim on Sum and Unit | Orbit fold without isSet, wrong boundary, Orbit path at run time |
 | S5 | Glue, ua, uaBeta, hcomp at Glue and U (port of orbit-lang S5) | Glue boundary mismatch, ua on a non-equivalence |
@@ -272,6 +272,20 @@ for each build), the counts in docs/STATUS.md, and a USER commit.
 | S8 | ZK ledger: Pedersen on BN254 in C, Sigma-protocol verifier lowering, zkEquiv, PrivateLoan, borrow, repay, liquidate | known-answer vectors; mutants: wrong opening, range overflow, non-member step, step on a Forfeited position, point not on the curve |
 | S9 | contract end to end: deploy, vote, amend, borrow, repay, liquidate; host and EVM differential; gas table; chain probe | differential rows, revert rows, EIP-170 and EIP-3860 size limits |
 | S10 | regimes (optional, O23), docs, final gate | regime rows |
+
+Builder call (S2, 2026-10-17): the port of orbit-lang 7734007. Identity
+check: on d4fdb2e, the trees src, test, domain, examples, Makefile,
+formers, gen and probe are equal to the trees of orbit-lang d7592fd and
+6cd1104 (`git rev-parse <rev>:<path>` in both repos). The patch is
+`git -C ~/Documents/orbit-lang diff 6cd1104 7734007 -- .` without
+docs/PLAN.md, README.md and design (103 files, +4306 -425), applied with
+`git apply --3way`. A scratch clone probe and the repo apply gave 0
+conflict hunks. After the apply, the same eight trees plus
+docs/VALIDATION.md are equal to the trees of orbit-lang 7734007.
+docs/host/README.md changes in two lines that named orbit-lang as this
+repo. The gate `make -B check` is GREEN, and each count is equal to the
+orbit-lang S2 count (docs/STATUS.md section S2). S2 does not prune; S3
+prunes ("port first, prune second").
 
 ## 9. Open items
 
