@@ -81,9 +81,10 @@ def commitBad : Nat -> Flag := fun (n : Nat) => u256Eq (first (ecAdd (pair 1u 1u
 -- The steps on the S7 ledger shape (examples/ledger.lang: admit and exit). Each address holds a status
 -- word (0 Empty, 1 Active, 2 Forfeited), the commitment words (cx, cy) and a deadline (0 is no deadline).
 -- A non-member or a Forfeited position reverts in zkBorrow, zkRepay and zkLiquidate. The entry parameters are
--- scalars: the range proof is not an entry parameter (the chain form is Part 4).
-state State := makeState (members : Map Addr Flag) (status : Map Addr Nat) (cx : Map Addr U256) (cy : Map Addr U256) (deadline : Map Addr Nat)
-def init : State := makeState mapEmpty mapEmpty mapEmpty mapEmpty mapEmpty
+-- scalars: the range proof is a chain of 32 zkRangeBit steps over the Horner accumulator (accx, accy) and the
+-- bit count (Part 4): zkBorrow starts the phase, zkRangeDone closes it when the accumulator is the commitment.
+state State := makeState (members : Map Addr Flag) (status : Map Addr Nat) (cx : Map Addr U256) (cy : Map Addr U256) (deadline : Map Addr Nat) (accx : Map Addr U256) (accy : Map Addr U256) (bits : Map Addr Nat) (ranged : Map Addr Flag)
+def init : State := makeState mapEmpty mapEmpty mapEmpty mapEmpty mapEmpty mapEmpty mapEmpty mapEmpty mapEmpty
 def zkGrace : Nat := 7
 
 -- View: a is a member and its position is Active.
@@ -93,12 +94,12 @@ def zkPosActive : (env : Env) -> (s : State) -> (a : Addr) -> Flag :=
 -- Entry: the admit of a (admitOne): a is a member with an Active position.
 def zkEnroll : (env : Env) -> (s : State) -> (a : Addr) -> Option (Prod State (List Out)) :=
   fun (env : Env) (s : State) (a : Addr) =>
-    some (pair (makeState (mapSet (members s) a flagYes) (mapSet (status s) a 1) (cx s) (cy s) (deadline s)) nil)
+    some (pair (makeState (mapSet (members s) a flagYes) (mapSet (status s) a 1) (cx s) (cy s) (deadline s) (accx s) (accy s) (bits s) (ranged s)) nil)
 
 -- Entry: the exit of a (exitOne) forfeits its position.
 def zkDepart : (env : Env) -> (s : State) -> (a : Addr) -> Option (Prod State (List Out)) :=
   fun (env : Env) (s : State) (a : Addr) =>
-    some (pair (makeState (mapSet (members s) a flagNo) (mapSet (status s) a 2) (cx s) (cy s) (deadline s)) nil)
+    some (pair (makeState (mapSet (members s) a flagNo) (mapSet (status s) a 2) (cx s) (cy s) (deadline s) (accx s) (accy s) (bits s) (ranged s)) nil)
 
 -- Entry: the caller is a member and Active and the Schnorr proof opens (x, y): store the commitment,
 -- the deadline is now + zkGrace. Else revert.
@@ -106,16 +107,17 @@ def zkBorrow : (env : Env) -> (s : State) -> (x : U256) -> (y : U256) -> (ax : U
   fun (env : Env) (s : State) (x : U256) (y : U256) (ax : U256) (ay : U256) (s1 : U256) (s2 : U256) =>
     flagIf (zkPosActive env s (caller env))
       (flagIf (schnorrVerify (pair x y) (pair (pair ax ay) (pair s1 s2)))
-        (some (pair (makeState (members s) (status s) (mapSet (cx s) (caller env) x) (mapSet (cy s) (caller env) y) (mapSet (deadline s) (caller env) (natAdd (now env) zkGrace))) nil))
+        (some (pair (makeState (members s) (status s) (mapSet (cx s) (caller env) x) (mapSet (cy s) (caller env) y) (mapSet (deadline s) (caller env) (natAdd (now env) zkGrace)) (mapSet (accx s) (caller env) 0u) (mapSet (accy s) (caller env) 0u) (mapSet (bits s) (caller env) 0) (mapSet (ranged s) (caller env) flagNo)) nil))
         none)
       none
 
--- Entry: the same test with the new commitment, the deadline cleared.
+-- Entry: the same test with the new commitment, the deadline cleared. The replaced commitment's range
+-- attestation and any partial range proof are cleared, just as in zkBorrow.
 def zkRepay : (env : Env) -> (s : State) -> (x : U256) -> (y : U256) -> (ax : U256) -> (ay : U256) -> (s1 : U256) -> (s2 : U256) -> Option (Prod State (List Out)) :=
   fun (env : Env) (s : State) (x : U256) (y : U256) (ax : U256) (ay : U256) (s1 : U256) (s2 : U256) =>
     flagIf (zkPosActive env s (caller env))
       (flagIf (schnorrVerify (pair x y) (pair (pair ax ay) (pair s1 s2)))
-        (some (pair (makeState (members s) (status s) (mapSet (cx s) (caller env) x) (mapSet (cy s) (caller env) y) (mapSet (deadline s) (caller env) 0)) nil))
+        (some (pair (makeState (members s) (status s) (mapSet (cx s) (caller env) x) (mapSet (cy s) (caller env) y) (mapSet (deadline s) (caller env) 0) (mapSet (accx s) (caller env) 0u) (mapSet (accy s) (caller env) 0u) (mapSet (bits s) (caller env) 0) (mapSet (ranged s) (caller env) flagNo)) nil))
         none)
       none
 
@@ -123,8 +125,41 @@ def zkRepay : (env : Env) -> (s : State) -> (x : U256) -> (y : U256) -> (ax : U2
 def zkLiquidate : (env : Env) -> (s : State) -> (a : Addr) -> Option (Prod State (List Out)) :=
   fun (env : Env) (s : State) (a : Addr) =>
     flagIf (zkAnd (zkPosActive env s a) (zkAnd (natLe 1 (mapGet (deadline s) a)) (natLe (natAdd (mapGet (deadline s) a) 1) (now env))))
-      (some (pair (makeState (members s) (mapSet (status s) a 2) (cx s) (cy s) (deadline s)) nil))
+      (some (pair (makeState (members s) (mapSet (status s) a 2) (cx s) (cy s) (deadline s) (accx s) (accy s) (bits s) (ranged s)) nil))
       none
+
+-- Entry (Part 4): one bit of the range proof of the caller's commitment. The caller is Active with fewer than
+-- 32 bits and the bit proof opens (cxi, cyi) as a bit: the accumulator takes the Horner step
+-- acc := C_i + 2 acc (the zkRangeStep of the prelude) and the count grows by one. Else revert. The accumulator
+-- starts at (0, 0), the point at infinity: the host and the 0x06/0x07 precompiles take it as the identity.
+-- The call order is the fold order, rb31 (the top bit) first and rb00 last.
+def zkRangeBit : (env : Env) -> (s : State) -> (cxi : U256) -> (cyi : U256) -> (a0x : U256) -> (a0y : U256) -> (a1x : U256) -> (a1y : U256) -> (e0 : U256) -> (e1 : U256) -> (s0 : U256) -> (s1 : U256) -> Option (Prod State (List Out)) :=
+  fun (env : Env) (s : State) (cxi : U256) (cyi : U256) (a0x : U256) (a0y : U256) (a1x : U256) (a1y : U256) (e0 : U256) (e1 : U256) (s0 : U256) (s1 : U256) =>
+    flagIf (zkAnd (zkPosActive env s (caller env)) (natLe (natAdd (mapGet (bits s) (caller env)) 1) 32))
+      (flagIf (bitVerify (pair cxi cyi) (pair (pair (pair a0x a0y) (pair a1x a1y)) (pair (pair e0 e1) (pair s0 s1))))
+        (some (pair (makeState (members s) (status s) (cx s) (cy s) (deadline s) (mapSet (accx s) (caller env) (first (ecAdd (pair cxi cyi) (ecMul (pair (mapGet (accx s) (caller env)) (mapGet (accy s) (caller env))) 2u)))) (mapSet (accy s) (caller env) (second (ecAdd (pair cxi cyi) (ecMul (pair (mapGet (accx s) (caller env)) (mapGet (accy s) (caller env))) 2u)))) (mapSet (bits s) (caller env) (natAdd (mapGet (bits s) (caller env)) 1)) (ranged s)) nil))
+        none)
+      none
+
+-- Entry (Part 4): the end of the range phase. The caller is Active with 32 bits and the accumulator is the
+-- commitment (cx, cy): ranged is set, the accumulator and the count reset. Else revert (a short count or a
+-- wrong sum). The prelude name zkRangeEnd is the fold form, so the entry is zkRangeDone.
+def zkRangeDone : (env : Env) -> (s : State) -> Option (Prod State (List Out)) :=
+  fun (env : Env) (s : State) =>
+    flagIf (zkAnd (zkPosActive env s (caller env)) (zkAnd (natEq (mapGet (bits s) (caller env)) 32) (zkAnd (u256Eq (mapGet (accx s) (caller env)) (mapGet (cx s) (caller env))) (u256Eq (mapGet (accy s) (caller env)) (mapGet (cy s) (caller env))))))
+      (some (pair (makeState (members s) (status s) (cx s) (cy s) (deadline s) (mapSet (accx s) (caller env) 0u) (mapSet (accy s) (caller env) 0u) (mapSet (bits s) (caller env) 0) (mapSet (ranged s) (caller env) flagYes)) nil))
+      none
+
+-- Views (Part 4): the known answers on the chain. The words are parameters, so the curve ops stay open and
+-- lower to the 0x06/0x07 precompiles (a closed call folds in the host and tests nothing on the chain).
+def zkCommitX : (env : Env) -> (s : State) -> (p : U256) -> (b : U256) -> U256 :=
+  fun (env : Env) (s : State) (p : U256) (b : U256) => first (commitWords (pair p b))
+def zkCommitY : (env : Env) -> (s : State) -> (p : U256) -> (b : U256) -> U256 :=
+  fun (env : Env) (s : State) (p : U256) (b : U256) => second (commitWords (pair p b))
+def zkSchnorrView : (env : Env) -> (s : State) -> (x : U256) -> (y : U256) -> (ax : U256) -> (ay : U256) -> (s1 : U256) -> (s2 : U256) -> Flag :=
+  fun (env : Env) (s : State) (x : U256) (y : U256) (ax : U256) (ay : U256) (s1 : U256) (s2 : U256) => schnorrVerify (pair x y) (pair (pair ax ay) (pair s1 s2))
+def zkBitView : (env : Env) -> (s : State) -> (bx : U256) -> (by : U256) -> (a0x : U256) -> (a0y : U256) -> (a1x : U256) -> (a1y : U256) -> (e0 : U256) -> (e1 : U256) -> (s0 : U256) -> (s1 : U256) -> Flag :=
+  fun (env : Env) (s : State) (bx : U256) (by : U256) (a0x : U256) (a0y : U256) (a1x : U256) (a1y : U256) (e0 : U256) (e1 : U256) (s0 : U256) (s1 : U256) => bitVerify (pair bx by) (pair (pair (pair a0x a0y) (pair a1x a1y)) (pair (pair e0 e1) (pair s0 s1)))
 
 -- Review regressions for proof bounds and scalar encodings.
 def emptyOpen : SchnorrProof := pair (pair 3375067998069891636219788075293155034804894088561886047966428878849990394930u 3922351410060594331739905335299836702423744189148923529681436267396531681325u) (pair 8597939669460251328005049418096605809333994177893183986842015191416319236139u 14442140385795087337370935168415348143435625911770867638322334190322826756107u)
@@ -139,3 +174,14 @@ def bitChallenge0 : Flag := bitVerify c0 (pair (first bitProof0) (pair (pair (u2
 def bitChallenge1 : Flag := bitVerify c0 (pair (first bitProof0) (pair (pair (first (first (second bitProof0))) (u256Add (second (first (second bitProof0))) r)) (second (second bitProof0))))
 def bitScalar0 : Flag := bitVerify c0 (pair (first bitProof0) (pair (first (second bitProof0)) (pair (u256Add (first (second (second bitProof0))) r) (second (second (second bitProof0))))))
 def bitScalar1 : Flag := bitVerify c0 (pair (first bitProof0) (pair (first (second bitProof0)) (pair (first (second (second bitProof0))) (u256Add (second (second (second bitProof0))) r))))
+
+-- A completed range proof of cKA, followed by repayment to a 33-bit commitment.
+def reviewAddr : Addr := 0x00000000000000000000000000000000000000aa
+def reviewEnv : Env := makeEnv 1 reviewAddr
+def reviewRangedState : State := makeState (mapSet mapEmpty reviewAddr flagYes) (mapSet mapEmpty reviewAddr 1) (mapSet mapEmpty reviewAddr (first cKA)) (mapSet mapEmpty reviewAddr (second cKA)) (mapSet mapEmpty reviewAddr 8) mapEmpty mapEmpty mapEmpty (mapSet mapEmpty reviewAddr flagYes)
+def repayUnranges : Flag := option flagYes (fun (p : Prod State (List Out)) => mapGet (ranged (first p)) reviewAddr) (zkRepay reviewEnv reviewRangedState (first longCommit) (second longCommit) (first (first longOpen)) (second (first longOpen)) (first (second longOpen)) (second (second longOpen)))
+-- One accepted bit of cKA, followed by repayment during the stream.
+def reviewPartialState : State := makeState (mapSet mapEmpty reviewAddr flagYes) (mapSet mapEmpty reviewAddr 1) (mapSet mapEmpty reviewAddr (first cKA)) (mapSet mapEmpty reviewAddr (second cKA)) (mapSet mapEmpty reviewAddr 8) (mapSet mapEmpty reviewAddr (first (first rb31))) (mapSet mapEmpty reviewAddr (second (first rb31))) (mapSet mapEmpty reviewAddr 1) mapEmpty
+def reviewPartialRepay : Option (Prod State (List Out)) := zkRepay reviewEnv reviewPartialState (first longCommit) (second longCommit) (first (first longOpen)) (second (first longOpen)) (first (second longOpen)) (second (second longOpen))
+def repayResetsBits : Nat := option 99 (fun (p : Prod State (List Out)) => mapGet (bits (first p)) reviewAddr) reviewPartialRepay
+def repayResetsAcc : Flag := option flagNo (fun (p : Prod State (List Out)) => zkAnd (u256Eq (mapGet (accx (first p)) reviewAddr) 0u) (u256Eq (mapGet (accy (first p)) reviewAddr) 0u)) reviewPartialRepay

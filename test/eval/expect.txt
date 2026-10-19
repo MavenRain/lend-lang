@@ -130,3 +130,6 @@ zk bitChallenge0 => 0
 zk bitChallenge1 => 0
 zk bitScalar0 => 0
 zk bitScalar1 => 0
+zk repayUnranges => 0
+zk repayResetsBits => 0
+zk repayResetsAcc => 1

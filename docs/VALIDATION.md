@@ -251,6 +251,41 @@ zkBorrow, zkRepay and zkLiquidate are typechecked (borrow, repay and liquidate
 are design-signature names). Gate: examples 37, check refusals 184, kit-only
 24, evals 132, zk 33, the other counts equal Part 2, `make -B check` exit 0.
 
+S9 Part 4 adds the chain gate `test/zk.sh` (the `test/precompile.sh` shape,
+run by `make check` after precompile.sh) and the chain form of the range
+proof in `examples/zk.lang`: the state holds the Horner accumulator accx,
+accy, the count bits and the flag ranged for each address; zkRangeBit (10
+words) checks one bit proof with bitVerify open and folds the bit commitment
+into the accumulator, the top bit first; zkRangeDone (0 words) compares the
+accumulator with the position's commitment after 32 bits and sets ranged.
+The views zkCommitX, zkCommitY, zkSchnorrView and zkBitView take the proof
+words as parameters, so the curve ops lower to the 0x06 and 0x07
+precompiles. The gate checks 56 steps: 7 known-answer views, zkEnroll, the
+five reverts of PLAN section 8 (a wrong opening; range overflow as the
+rb00Bad bit and zkRangeDone before any bit; a non-member; a Forfeited
+position; the point (1, 1)), zkBorrow, the 32 zkRangeBit rows, zkRangeDone
+and the flow rows zkRepay, zkLiquidate at 8 (revert) and at 9 (ok) and a
+Forfeited zkBorrow (revert). The selector helper `sel` of `test/evmchain.sh`
+and `test/dispatch.sh` now runs `od -An -v -tx1`: od folds a repeated
+16-byte line into `*`, and `uint256,uint256,` repeats on that boundary from
+six arguments up, so each 6-word and 10-word call got a non-hex selector and
+an empty call data (CALLDATASIZE 0 at the head guard). Gate: builds 4, zk
+chain 56 steps 0 failures, the other counts equal Part 3, `make -B check`
+exit 0. Mutants (one at a time, `make -B` per rebuild): wrong opening, range
+overflow in the prelude and on the chain, non-member, Forfeited, a point not
+on the curve: 6 of 6 runs KILLED.
+
+Part 4 staged review (2026-10-19) reproduced and fixed one MEDIUM defect:
+zkRepay replaced the commitment without clearing ranged, accx, accy or bits.
+Starting from the completed range proof of cKA (7), repayment with longCommit
+(2^32 + 7) and its valid longOpen left ranged set. Repayment during a partial
+proof also retained its accumulator and bit count. zkRepay now clears those
+four fields for the caller when replacing the commitment. Three DSL eval
+regressions exercise a completed proof and the state after rb31: before the
+fix, repayUnranges, repayResetsBits and repayResetsAcc returned 1, 1 and 0;
+after the fix they return 0, 0 and 1. The complete gate passes with 135 eval
+rows and 56 zk chain steps. No CI checks were removed or weakened.
+
 Staged review (2026-10-19) reproduced and fixed three defects:
 
 - HIGH: Schnorr and bit provers reused the same deterministic nonce for

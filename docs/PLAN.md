@@ -908,7 +908,18 @@ Part 4, the lowering and chain rows. The verifier lowers to STATICCALL
 (the test/precompile.sh `call` shape) checks the commit words, a
 Schnorr proof, a bit proof and a 32-bit range proof on the chain, and
 the reverts (wrong opening, range overflow, non-member, Forfeited, a
-point not on the curve). S10 reads the gas numbers from here.
+point not on the curve). S10 reads the gas numbers from here. Part 4
+status (2026-10-19): DONE. The range proof on the chain is 32 zkRangeBit
+entries (10 words each; the state holds the Horner accumulator accx, accy
+and the count bits; rb31 first) and zkRangeDone (the prelude owns the name
+zkRangeEnd). The views zkCommitX, zkCommitY, zkSchnorrView and zkBitView
+take the proof words as parameters, so the curve ops stay open and lower
+to the 0x06 and 0x07 precompiles. The selector helper of test/evmchain.sh
+(and test/dispatch.sh) needed `od -v`: od folds a repeated 16-byte line
+into `*`, and `uint256,uint256,` repeats on that boundary from six
+arguments up, so each 6-word and 10-word call got a non-hex selector and
+an empty call data. Part 4 gate: test/zk.sh 56 steps, 0 failures; builds
+4; the other counts equal Part 3, exit 0.
 
 Part 5, zkEquiv as a guest theorem (the O14 ruling). Forward: elim on
 the Quot; the quotSquash case uses isSet PublicFace, from isSet
@@ -931,8 +942,9 @@ Gate rows:
   commitBad 2 => trap); check rows: zk-redefine (a redefined zk prelude
   name: REFUSE_SIG), zk-guest-word (a guest word literal in a proof:
   REFUSE_KIT), addmod-guest (u256AddMod in guest mode: REFUSE_KIT).
-- Part 4: test/zk.sh chain rows (the known-answer words on the chain
-  and the 5 reverts).
+- Part 4: test/zk.sh chain rows (7 known-answer views, the 5 reverts,
+  the 32-step range chain and zkRangeDone, the flow rows zkRepay,
+  zkLiquidate at 8 and 9, a Forfeited zkBorrow): 56 steps, 0 failures.
 - Part 5: eval rows for zkEquiv at the closed known-answer opening
   (forward, backward, both round trips).
 
