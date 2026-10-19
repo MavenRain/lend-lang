@@ -158,6 +158,20 @@ int main(void) {
   ok &= expression("u256-mul-overflow", &mul_over, NULL, 1, NULL, 0);
   ok &= expression("u256-mul-right-zero", &mul_zero, zero, 0, NULL, 0);
   ok &= expression("nested-map-hash", &nested, nested_hash, 0, NULL, 0);
+  /* Exercise ADDMOD directly, including a sum that needs a 257th bit. */
+  unsigned char almost_max[32], addmod_want[32], addmod_two[32] = {0};
+  memcpy(almost_max, max, 32);
+  almost_max[31] = 254;
+  memcpy(addmod_want, max, 32);
+  addmod_want[31] = 253;
+  addmod_two[31] = 2;
+  const IrExpr almost_full = {.kind = IR_EXPR_WORD, .word = almost_max};
+  const IrExpr addmod = {.kind = IR_EXPR_BINARY, .op = IR_OP_ADDMOD, .left = &full, .right = &full, .third = &key};
+  const IrExpr addmod_carry = {.kind = IR_EXPR_BINARY, .op = IR_OP_ADDMOD, .left = &almost_full, .right = &almost_full, .third = &full};
+  const IrExpr addmod_zero = {.kind = IR_EXPR_BINARY, .op = IR_OP_ADDMOD, .left = &one, .right = &two, .third = &empty};
+  ok &= expression("addmod-reduce-operands", &addmod, addmod_two, 0, NULL, 0);
+  ok &= expression("addmod-carry", &addmod_carry, addmod_want, 0, NULL, 0);
+  ok &= expression("addmod-zero-modulus", &addmod_zero, NULL, 1, NULL, 0);
   ok &= repeat("repeat-five", 5, 15);
   ok &= repeat("repeat-zero", 0, 0);
   if (ok) printf("emit: %u execution regressions passed\n", executions);

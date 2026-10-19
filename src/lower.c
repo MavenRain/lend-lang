@@ -323,6 +323,18 @@ static const IrExpr *ir_binary(Low *l, IrOp op, const IrExpr *a, const IrExpr *b
   return e;
 }
 
+/* u256AddMod (lend-lang S9): a binary node with the modulus as THIRD. */
+static const IrExpr *ir_addmod(Low *l, const IrExpr *a, const IrExpr *b, const IrExpr *c) {
+  IrExpr *e = a != NULL && b != NULL && c != NULL ? new_expr(l, IR_EXPR_BINARY) : NULL;
+  if (e != NULL) {
+    e->op = IR_OP_ADDMOD;
+    e->left = a;
+    e->right = b;
+    e->third = c;
+  }
+  return e;
+}
+
 static const IrExpr *ir_sload(Low *l, const IrExpr *slot) {
   IrExpr *e = slot != NULL ? new_expr(l, IR_EXPR_SLOAD) : NULL;
   if (e != NULL) e->left = slot;
@@ -450,8 +462,9 @@ static const IrExpr *lower_if_value(Low *l, Stmts *b, const Value *v) {
 static int expr_may_trap(const IrExpr *e) {
   if (e == NULL) return 0;
   if (e->kind == IR_EXPR_BINARY && (e->op == IR_OP_DIV || e->op == IR_OP_MOD || e->op == IR_OP_ADD64 ||
-      e->op == IR_OP_MUL64 || e->op == IR_OP_ADD_TRAP || e->op == IR_OP_MUL_TRAP)) return 1;
-  return expr_may_trap(e->left) || expr_may_trap(e->right);
+      e->op == IR_OP_MUL64 || e->op == IR_OP_ADD_TRAP || e->op == IR_OP_MUL_TRAP ||
+      e->op == IR_OP_ADDMOD)) return 1;
+  return expr_may_trap(e->left) || expr_may_trap(e->right) || expr_may_trap(e->third);
 }
 
 /* The input words of a PRECOMPILE (S2); LOG and CALL fields are in fx blocks only. */
@@ -636,6 +649,12 @@ static const IrExpr *lower_expr(Low *l, Stmts *b, const Value *v) {
   if (is_op(v, OP_FLAG_IF) && v->argc == 3) return lower_if_value(l, b, v);
   if (is_op(v, OP_FOLD_LIST) && v->argc == 3 && field_of(v->args[2], 1u, &f) && form_at(l, f) == FORM_LIST)
     return lower_fold(l, b, v, f);
+  if (is_op(v, OP_U256_ADDMOD) && v->argc == 3) {
+    const IrExpr *x = lower_expr(l, b, v->args[0]);
+    const IrExpr *y = x != NULL ? lower_expr(l, b, v->args[1]) : NULL;
+    const IrExpr *z = y != NULL ? lower_expr(l, b, v->args[2]) : NULL;
+    return ir_addmod(l, x, y, z);
+  }
   for (size_t k = 0; v != NULL && v->argc == 2 && k < sizeof BINARY_OPS / sizeof BINARY_OPS[0]; k++)
     if (is_op(v, BINARY_OPS[k].op)) {
       const IrExpr *x = lower_expr(l, b, v->args[0]);

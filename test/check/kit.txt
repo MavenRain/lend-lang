@@ -90,3 +90,4 @@ unglue-type.lang
 ua-not-refl.lang
 glue-binder.lang
 elim-path-case.lang
+zk-redefine.lang

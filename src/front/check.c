@@ -180,6 +180,7 @@ static const Builtin BUILTINS[] = {
   {"u256Sub", 2, RULE_U256_2, OP_U256_SUB, OP_U256, 0, VIS_INTERNAL},
   {"u256Le", 2, RULE_U256_2, OP_U256_LE, OP_FLAG, 0, VIS_INTERNAL},
   {"u256Eq", 2, RULE_U256_2, OP_U256_EQ, OP_FLAG, 0, VIS_INTERNAL},
+  {"u256AddMod", 3, RULE_U256_2, OP_U256_ADDMOD, OP_U256, 0, VIS_INTERNAL},
   {"toU256", 1, RULE_TO_U256, OP_TO_U256, OP_U256, 0, VIS_INTERNAL},
   {"addrEq", 2, RULE_ADDR2, OP_ADDR_EQ, OP_FLAG, 0, VIS_INTERNAL},
   {"flagIf", 3, RULE_FLAG_IF, OP_FLAG_IF, OP_FLAG, 0, VIS_INTERNAL},
@@ -2199,8 +2200,9 @@ static const Core *rule_prim(Call *k, Op arg) {
   const Value *t = tyop(c, arg, 0, NULL, NULL, NULL);
   const Core *x = check(c, k->args[0], t);
   const Core *y = x == NULL || k->b->arity < 2u ? NULL : check(c, k->args[1], t);
+  const Core *z = y == NULL || k->b->arity < 3u ? NULL : check(c, k->args[2], t);
   k->type = tyop(c, k->b->result, 0, NULL, NULL, NULL);
-  return k->b->arity < 2u ? op3(c, k->b->op, 0, 1, x, NULL, NULL) : op3(c, k->b->op, 0, 2, x, y, NULL);
+  return op3(c, k->b->op, 0, k->b->arity, x, y, z);
 }
 
 /* The curve ops (S2, R17): fixed signatures over U256, Nat, G1 = Prod U256

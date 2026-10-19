@@ -108,6 +108,7 @@ base-natdiv.lang REFUSE_KIT
 base-natmod.lang REFUSE_KIT
 base-hash.lang REFUSE_KIT
 base-ecrecover.lang REFUSE_KIT
+addmod-guest.lang REFUSE_KIT
 base-ecadd.lang REFUSE_KIT
 base-ecmul.lang REFUSE_KIT
 base-ecpairing.lang REFUSE_KIT
@@ -178,4 +179,6 @@ menu-type.lang REFUSE_SIG
 menu-early.lang REFUSE_SIG
 dao-no-set.lang NAME_UNKNOWN
 dao-redefine.lang REFUSE_SIG
+zk-redefine.lang REFUSE_NAME
+zk-guest-word.lang REFUSE_KIT
 amend-end.lang PATH_END

@@ -21,7 +21,7 @@ static unsigned statements(IrBlock b, IrStmtKind kind) {
 static unsigned operations(const IrExpr *e, IrOp op) {
   if (e == NULL) return 0;
   return (e->kind == IR_EXPR_BINARY && e->op == op)
-    + operations(e->left, op) + operations(e->right, op);
+    + operations(e->left, op) + operations(e->right, op) + operations(e->third, op);
 }
 
 static unsigned block_operations(IrBlock b, IrOp op) {
@@ -275,10 +275,13 @@ int main(void) {
   int ok = 1;
   const char *head = "fun (x : U256) (acc : U256) => x";
   const char *sum = "fun (x : U256) (acc : U256) => u256Add x acc";
+  /* The point (d, 1) keeps ecAdd open in the lowered view (S9: a closed
+     off-curve point now traps in the evaluator, the discard-static-seed-trap
+     row below), so these two rows still cover a failed STATICCALL. */
   ok &= fold_regression("discard-precompile-seed-failure", head,
-    "first (ecAdd (pair 1u 1u) (pair 1u 2u))", 7, 1);
+    "first (ecAdd (pair d 1u) (pair 1u 2u))", 7, 1);
   ok &= fold_regression("discard-precompile-step-failure",
-    "fun (x : U256) (acc : U256) => flagIf (u256Eq x 7u) x (first (ecAdd (pair 1u 1u) (pair 1u 2u)))",
+    "fun (x : U256) (acc : U256) => flagIf (u256Eq x 7u) x (first (ecAdd (pair d 1u) (pair 1u 2u)))",
     "0u", 7, 1);
   ok &= fold_regression("discard-static-seed-trap", head, "u256Add 1u " WMAX, 7, 1);
   ok &= fold_regression("discard-dynamic-seed-trap", head, "u256Add (u256Add 1u d) " WMAX, 7, 1);

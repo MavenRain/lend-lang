@@ -3,7 +3,7 @@ TCC ?= tcc
 CC ?= cc
 CFLAGS = -std=c99 -Wall -Werror -Isrc
 CLANG_FLAGS = -std=c99 -Wall -Wextra -Wswitch-enum -Werror -fsyntax-only -Isrc
-FRONT = src/front/base.c src/front/u256.c src/front/lexer.c src/front/parser.c src/front/front.c src/front/contract.c src/front/eval.c src/front/check.c src/keccak.c
+FRONT = src/front/base.c src/front/u256.c src/front/bn254.c src/front/pedersen.c src/front/lexer.c src/front/parser.c src/front/front.c src/front/contract.c src/front/eval.c src/front/check.c src/keccak.c
 TARGET = src/evm.c src/asm.c
 SRC = src/main.c $(FRONT) $(TARGET) src/lower.c
 TOOL = test/asmtool.c $(TARGET) src/keccak.c
@@ -15,11 +15,12 @@ BUILD_TOOL = test/buildtool.c $(TARGET) src/keccak.c
 LOWER_TOOL = test/lowertool.c $(FRONT) $(TARGET)
 EVM_TOOL = test/evmtool.c src/asm.c src/keccak.c
 EMIT_TOOL = test/emittool.c $(filter-out src/evm.c,$(TARGET)) src/keccak.c
+ZK_TOOL = test/zktool.c $(filter-out src/front/front.c,$(FRONT))
 HEADERS = $(wildcard src/*.h src/front/*.h)
 
 .PHONY: build check check-clang clean
 
-build: build/langc build/asmtool build/fronttool build/pathtool build/runtool build/slottool build/buildtool build/lowertool build/evmtool build/emittool
+build: build/langc build/asmtool build/fronttool build/pathtool build/runtool build/slottool build/buildtool build/lowertool build/evmtool build/emittool build/zktool
 
 build/domain.c: domain/domain.lang gen/embed.c
 	mkdir -p build
@@ -62,6 +63,10 @@ build/emittool: $(EMIT_TOOL) src/evm.c $(HEADERS)
 	mkdir -p build
 	$(TCC) $(CFLAGS) -o build/emittool $(EMIT_TOOL)
 
+build/zktool: $(ZK_TOOL) $(HEADERS)
+	mkdir -p build
+	$(TCC) $(CFLAGS) -o build/zktool $(ZK_TOOL)
+
 check-clang: build/domain.c
 	$(CC) $(CLANG_FLAGS) $(SRC) build/domain.c
 	$(CC) $(CLANG_FLAGS) $(TOOL)
@@ -73,8 +78,9 @@ check-clang: build/domain.c
 	$(CC) $(CLANG_FLAGS) $(LOWER_TOOL) build/domain.c
 	$(CC) $(CLANG_FLAGS) $(EMIT_TOOL)
 	$(CC) $(CLANG_FLAGS) $(EVM_TOOL)
+	$(CC) $(CLANG_FLAGS) $(ZK_TOOL)
 
-check: build/langc build/asmtool build/fronttool build/pathtool build/runtool build/slottool build/buildtool build/lowertool build/evmtool build/emittool check-clang
+check: build/langc build/asmtool build/fronttool build/pathtool build/runtool build/slottool build/buildtool build/lowertool build/evmtool build/emittool build/zktool check-clang
 	sh test/gate.sh
 	sh test/run.sh
 	sh test/asm.sh
@@ -92,6 +98,7 @@ check: build/langc build/asmtool build/fronttool build/pathtool build/runtool bu
 	build/lowertool
 	build/emittool
 	build/evmtool
+	build/zktool
 
 clean:
 	rm -rf build

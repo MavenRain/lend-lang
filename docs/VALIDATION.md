@@ -213,3 +213,62 @@ Pathtool includes the evaluator implementation to exercise this internal
 operation; its build target explicitly depends on `src/front/eval.c`.
 Both regressions pass on the base commit and fail on the original S8
 changes. The fixed tree passes `make -B check`, with the gate counts above.
+
+S9 Part 2 adds the host Pedersen and Sigma code in `src/front/pedersen.c`.
+The second generator H comes from try-and-increment with the tag
+`lend-lang/H` (11 ASCII bytes, no terminator) and a 32-byte big-endian
+counter from 0. The counter 0 already gives a square, so H is the point
+(16889344832318456226800756484092570876163040091388227964266892833146135894809,
+3103664549520864032584950770825165644353076013427206247130791512563214797700).
+The C regression `test/zktool.c` prints the known-answer words for the
+commitment of 7 with the blind 11, its Schnorr opening, the bit proofs for 0
+(blind 5) and 1 (blind 9) and the 32-bit range proof of 7, and checks 33
+rows: H on the curve, the hash chain against keccak256 of two zero words,
+the commit words, the four verifiers on their vectors, the range opening
+equal to the Schnorr vector, and the negatives (a wrong s1, a bit value 2 at
+the prover and at the verifier, the point (1, 3) off the curve at every
+verifier, and a value 2^32 + 1 at the prover and at the verifier). The
+review adds two nonce isolation checks, six noncanonical scalar checks,
+and two opening fixtures for the guest range-length regressions. `make
+check` runs it last; the other counts equal Part 1.
+
+S9 Part 3 adds the op u256AddMod, the zk prelude and the fixture
+`examples/zk.lang`. (a) `examples/words.lang` has the rows wAddMod,
+wAddModCarry (two words above r with a carry) and lawAddMod, and the row
+addModTrap 0 traps on the modulus 0; `test/check/addmod-guest.lang` is
+REFUSE_KIT. (b) The zk prelude `kernel/zk.lang` in `src/front/front.c`
+splices after Position and posWord in kit mode only. The check row
+`zk-redefine` is REFUSE_NAME, not REFUSE_SIG: a program definition of commit
+after the prelude is a redefinition of a domain definition (rule R4). The
+check row `zk-guest-word` is REFUSE_KIT at `Position : Type 0 := U256`, and
+the kit re-run of the row loads the prelude and admits the word literal. The
+prelude requires proof scalars below r and exactly 32 bit commitments,
+matching the host verifier. (c) `examples/zk.lang` (a kit.txt
+row) carries the Part 2 words as guest literals. The eval rows are commitKA
+(the pair commit.C.x commit.C.y), schnorrOk 1, schnorrBad 0, bitOk0 1, bitOk1
+1, bitBad 0, rangeOk 1, rangeBad 0 and commitBad 2 => trap. The steps
+zkBorrow, zkRepay and zkLiquidate are typechecked (borrow, repay and liquidate
+are design-signature names). Gate: examples 37, check refusals 184, kit-only
+24, evals 132, zk 33, the other counts equal Part 2, `make -B check` exit 0.
+
+Staged review (2026-10-19) reproduced and fixed three defects:
+
+- HIGH: Schnorr and bit provers reused the same deterministic nonce for
+  the same opening. From public responses, the blind was recoverable as
+  `(s_bit - s1 + e_schnorr * b) / e_bit` in Fr. Both bit-0 and bit-1
+  regressions recovered the original blind before the fix. The nonce
+  preimage now includes a 32-byte protocol domain: 1 for Schnorr, 2 for
+  bit proofs and 3 for range blinding factors. The refreshed example
+  proofs use these domains; the recovery regressions now fail to recover
+  the opening.
+- HIGH: `rangeVerify` accepted lists of any length. `rangeEmpty` opened
+  infinity with no bit proofs; `rangeLong` appended the valid bit-1 proof
+  to the proof of 7 and accepted an opening of `2^32 + 7`, with blind
+  `11 + 9 * 2^32`. Both returned 1 before the fix and now return 0.
+- MEDIUM: the guest accepted proof scalars increased by the group order,
+  while the host rejected them. Two Schnorr response and four bit
+  challenge/response regressions returned 1 before the fix and now
+  return 0. The host rejects the same six encodings.
+
+The review found no CI weakening. `test/emittool.c` also exercises ADDMOD
+on operand reduction, a 257-bit sum and a zero modulus through go-ethereum.

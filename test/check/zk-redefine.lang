@@ -1,0 +1,8 @@
+-- commit is a definition of the zk prelude. The kernel gives it after
+-- Position and posWord, thus a program definition of commit is a
+-- redefinition of a domain definition (rule R4). A kit row: U256 is a kit
+-- item, so posWord exists in kit mode only (test/check/kit.txt).
+def Position : Type 0 := U256
+def posWord : Position -> U256 := fun (p : Position) => p
+
+def commit : Type 0 := Unit

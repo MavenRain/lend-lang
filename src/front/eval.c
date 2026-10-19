@@ -1,6 +1,7 @@
 /* The evaluator, the conversion test, quote and the printer (see
    front/core.h). SHARED by the tcc kits. */
 #include "front/core.h"
+#include "front/bn254.h"
 #include "keccak.h"
 
 #include <string.h>
@@ -24,7 +25,7 @@ static const char *const OP_NAMES[] = {
   [OP_NAT_EQ] = "natEq", [OP_NAT_LE] = "natLe",
   [OP_FLAG_IF] = "flagIf", [OP_U256_ADD] = "u256Add", [OP_U256_SUB] = "u256Sub",
   [OP_U256_LE] = "u256Le",
-  [OP_U256_EQ] = "u256Eq", [OP_TO_U256] = "toU256",
+  [OP_U256_EQ] = "u256Eq", [OP_U256_ADDMOD] = "u256AddMod", [OP_TO_U256] = "toU256",
   [OP_NAT_DIV] = "natDiv", [OP_NAT_MOD] = "natMod", [OP_HASH] = "hash", [OP_ECRECOVER] = "ecrecover",
   [OP_EC_ADD] = "ecAdd", [OP_EC_MUL] = "ecMul", [OP_EC_PAIRING] = "ecPairing", [OP_ADDR_TO_U256] = "addrToU256",
   [OP_ADDR_EQ] = "addrEq", [OP_PROJ] = "?", [OP_KMAP] = "Map", [OP_KMAP_OF] = "mapOf",
@@ -49,7 +50,7 @@ static const unsigned char OP_ARITY[] = {
   [OP_PAYLOAD] = 1, [OP_NAT_ADD] = 2, [OP_NAT_SUB] = 2,
   [OP_NAT_EQ] = 2, [OP_NAT_LE] = 2, [OP_FLAG_IF] = 3, [OP_U256_ADD] = 2,
   [OP_U256_SUB] = 2, [OP_U256_LE] = 2,
-  [OP_U256_EQ] = 2, [OP_TO_U256] = 1, [OP_ADDR_EQ] = 2,
+  [OP_U256_EQ] = 2, [OP_U256_ADDMOD] = 3, [OP_TO_U256] = 1, [OP_ADDR_EQ] = 2,
   [OP_NAT_DIV] = 2, [OP_NAT_MOD] = 2, [OP_HASH] = 2, [OP_ECRECOVER] = 4,
   [OP_EC_ADD] = 2, [OP_EC_MUL] = 2, [OP_EC_PAIRING] = 1, [OP_ADDR_TO_U256] = 1,
   [OP_PROJ] = 1, [OP_KMAP] = 2, [OP_KMAP_OF] = VARIES, [OP_KMAP_GET] = 3, [OP_KMAP_SET] = 4,
@@ -1361,6 +1362,35 @@ static const Value *u256_arith(Machine *m, Op op, const Value *const *a, uint32_
   return fn(&r, a[0]->word, a[1]->word) ? word_value(m, &r) : overflow(m);
 }
 
+/* u256AddMod: (x + y) mod n (lend-lang S9, the EVM ADDMOD reading). A
+   modulus of 0 traps, as natMod does. After the reduction of both terms
+   below n there are three cases: the sum overflows 2^256, so the result
+   is ra - (n - rb) (both differences exact);  the sum is n or more, so
+   the result is s - n;  else the result is s. */
+static const Value *u256_addmod(Machine *m, Op op, const Value *const *a, uint32_t n) {
+  const Value *out;
+  const U256 *mod;
+  U256 q, t, ra, rb, s;
+  if (!word_args(m, op, VAL_WORD, a, n, &out))
+    return out;
+  mod = a[2]->word;
+  if (!u256_div(&q, a[0]->word, mod))
+    return overflow(m);
+  u256_mul(&t, &q, mod);
+  u256_sub(&ra, a[0]->word, &t);
+  u256_div(&q, a[1]->word, mod);
+  u256_mul(&t, &q, mod);
+  u256_sub(&rb, a[1]->word, &t);
+  if (!u256_add(&s, &ra, &rb)) {
+    u256_sub(&t, mod, &rb);
+    u256_sub(&s, &ra, &t);
+    return word_value(m, &s);
+  }
+  if (u256_cmp(&s, mod) >= 0)
+    u256_sub(&s, &s, mod);
+  return word_value(m, &s);
+}
+
 /* u256Le, u256Eq and addrEq. */
 static const Value *word_test(Machine *m, Op op, const Value *const *a, uint32_t n) {
   const Value *out;
@@ -1412,8 +1442,8 @@ static const Value *addr_to_u256(Machine *m, const Value *const *a, uint32_t n) 
   return word_value(m, a[0]->word);
 }
 
-/* The curve ops (S2, R17): a trap argument gives the trap; else the
-   application is stuck, closed arguments included. The chain test is the
+/* ecrecover and ecPairing (S2, R17): a trap argument gives the trap; else
+   the application is stuck, closed arguments included. The chain test is the
    differential gate (O5). */
 static const Value *opaque(Machine *m, Op op, const Value *const *a, uint32_t n) {
   for (uint32_t i = 0; i < n; i++) {
@@ -1421,6 +1451,36 @@ static const Value *opaque(Machine *m, Op op, const Value *const *a, uint32_t n)
       return a[i];
   }
   return val_op(m, VAL_STUCK, op, 0, 0, a, n);
+}
+
+/* 1 when V is a closed G1: a pair of two words. */
+static int closed_point(const Value *v) {
+  return val_is(v, OP_PAIR) && v->args[0]->kind == VAL_WORD && v->args[1]->kind == VAL_WORD;
+}
+
+/* ecAdd and ecMul (S8 B1, USER ruling Q1): closed arguments compute in the
+   host (front/bn254.c). A coordinate at or above p or a point not on the
+   curve traps like an overflow (R14: the host reading of the 0x06 and 0x07
+   revert, R18). An open argument keeps the application stuck (opaque), so
+   the lowerer still emits the precompile. */
+static const Value *ec_op(Machine *m, Op op, const Value *const *a, uint32_t n) {
+  G1 p;
+  G1 q;
+  U256 x;
+  U256 y;
+  if (!closed_point(a[0]) || (op == OP_EC_ADD ? !closed_point(a[1]) : a[1]->kind != VAL_WORD))
+    return opaque(m, op, a, n);
+  if (!g1_from_words(&p, a[0]->args[0]->word, a[0]->args[1]->word))
+    return overflow(m);
+  if (op == OP_EC_ADD) {
+    if (!g1_from_words(&q, a[1]->args[0]->word, a[1]->args[1]->word))
+      return overflow(m);
+    g1_add(&p, &p, &q);
+  } else {
+    g1_mul(&p, &p, a[1]->word);
+  }
+  g1_to_words(&x, &y, &p);
+  return make(m, VAL_OP, OP_PAIR, 0, 2, word_value(m, &x), word_value(m, &y), NULL);
 }
 
 /* finAdd n a b: (a + b) mod n, with no overflow. A[0] is n. */
@@ -2065,6 +2125,7 @@ static const Value *transp_data(Machine *m, const Value *head, const Value *line
   case OP_NAT_LE:
   case OP_FLAG_IF:
   case OP_U256_ADD:
+  case OP_U256_ADDMOD:
   case OP_U256_SUB:
   case OP_U256_LE:
   case OP_U256_EQ:
@@ -3105,6 +3166,8 @@ static const Value *reduce_op(Machine *m, Op op, uint32_t inst, uint32_t field, 
     return nat_test(m, op, a, n);
   case OP_U256_ADD:
     return u256_arith(m, op, a, n, u256_add);
+  case OP_U256_ADDMOD:
+    return u256_addmod(m, op, a, n);
   case OP_U256_SUB:
     return u256_arith(m, op, a, n, u256_sub);
   case OP_U256_LE:
@@ -3120,9 +3183,10 @@ static const Value *reduce_op(Machine *m, Op op, uint32_t inst, uint32_t field, 
     return hash_words(m, a, n);
   case OP_ADDR_TO_U256:
     return addr_to_u256(m, a, n);
-  case OP_ECRECOVER:
   case OP_EC_ADD:
   case OP_EC_MUL:
+    return ec_op(m, op, a, n);
+  case OP_ECRECOVER:
   case OP_EC_PAIRING:
     return opaque(m, op, a, n);
   case OP_FLAG_IF:

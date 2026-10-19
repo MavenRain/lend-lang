@@ -220,7 +220,8 @@ only the public face.
 Default proof system (O15): Sigma protocols over the Pedersen group, with a
 keccak256 Fiat-Shamir challenge. A Schnorr proof shows knowledge of an
 opening. A range check uses a bit decomposition with one OR proof per bit.
-The verifier needs only ecAdd (0x06) and ecMul (0x07). There is no trusted
+The verifier needs only ecAdd (0x06), ecMul (0x07) and, for the per-bit
+challenge split, the ADDMOD opcode (S9 ruling, O15). There is no trusted
 setup and no circuit compiler, and the TinyCC host runs the prover. Cost:
 about 4 ecMul per range bit; the S10 gas table gives the numbers.
 
@@ -799,6 +800,153 @@ test, the squash square case, the
 outcomeSet slot_ok, the menu slot_ok, the law 2 splice, and the
 fast-path argument test if S8 ports it). make -B for each build.
 
+Builder call (S9, 2026-10-19). Survey:
+~/Documents/lend-lang-work/S9-survey.md. Findings: the port of
+orbit-lang c3ab788 has 0 conflict hunks; `commit` can be prelude text
+over the internal ecAdd and ecMul (a kernel prelude loads with
+ORIGIN_DOMAIN, so REFUSE_KIT does not apply to it); the kernel has no
+256-bit mod r (U256 ops are add, sub, le, eq; Nat is a uint64); zkEquiv
+as a guest theorem needs isSet Commitment and set-quotient
+effectiveness, and neither exists at HEAD.
+
+USER rulings (S9, 2026-10-19; AskUserQuestion, all recommended):
+- Part order: the port of orbit-lang c3ab788 first, then the host
+  Pedersen and Sigma prover with a known-answer fixture, then the zk
+  prelude text and the guest terms, then the lowering and the chain
+  rows. Each part has its own gate.
+- Generator H (O13): try-and-increment hash-to-curve. x = keccak256(tag
+  || counter) mod p with tag "lend-lang/H" and the counter from 0, until
+  x^3 + 3 is a square; y = the smaller root. The host derives H once,
+  the prelude carries the constant, and docs/VALIDATION.md cites the tag
+  and the counter. Nobody knows log_G H.
+- Range proof (O15): a Schnorr opening proof plus a 32-bit decomposition
+  with one CDS OR proof per bit. The split `e0 + e1 = e (mod r)` needs
+  one new internal op u256AddMod, lowered to the EVM ADDMOD opcode.
+  Amounts are 32-bit words.
+- zkEquiv (O14): on the guest side Commitment := Trunc0 (Prod U256
+  U256), a set by squash0. Effectiveness of the set quotient is a guest
+  theorem by ua (S5) in its own part (Part 5). If Part 5 does not clear
+  in two tries, zkEquiv is a declared equivalence (O14 (b)) with a note
+  here, and the theorem moves to S11.
+
+Defaults (S9, not ruled; the USER can change them):
+- Commitment shape: one plain Pedersen commitment per component of
+  Position = (collateral, debt). Commitment is the product group G1 x
+  G1, and the step rows of section 6 hold per component. (The other
+  shape: a vector Pedersen with a third generator.)
+- Prover home: a C fixture over bn254.h (test/zktool.c, the fronttool
+  pattern) prints the known-answer words. A `langc prove` verb waits for
+  S10.
+- Fiat-Shamir: e is a chain of the 2-word hash over the words of G, H, C
+  and A. The contract uses e raw as the ecMul scalar (0x07 reduces mod
+  r). The prover reduces e mod r in Fr.
+- A step (borrow, repay, liquidate) is an entry, a state change. Paths
+  stay with admit and exit (S7) and with the transport along Loan. The
+  section 6 sentence "each step is a path in LendingLedger M" reads so.
+- Nonces: deterministic, k = keccak256(secret || transcript) reduced
+  mod r. The host has no CSPRNG.
+- Size to word: an evaluator-only fold in the prelude (Size -> U256)
+  feeds commit. The lowerer does not see it; the contract sees
+  Commitment words only. The section 4 rule stays a later slice.
+
+Part 1, the port of orbit-lang c3ab788 (closed BN254 ecAdd and ecMul in
+the host). 10 files, 0 conflict hunks (survey section 1). New files:
+src/front/bn254.c, src/front/bn254.h, examples/bn254.lang (kit.txt
+row). Makefile FRONT (:6) gets bn254.c. eval.c: `#include
+"front/bn254.h"`, closed_point and ec_op after `opaque` (eval.c:1415),
+and the OP_EC_ADD and OP_EC_MUL cases of reduce_op (eval.c:3123-3126)
+call ec_op. Moved rows, as orbit: test/lower/path-word.lang takes `(x :
+U256)`; test/precompile.sh addBad takes `2u` (`call revert addBad 2u`)
+and the file gains 6 chain rows (3G, (r - 1)G, rG); test/eval/expect.txt
+twoG becomes the word pair, plus 10 bn254 rows. Check after the build:
+test/lowertool.c:278-282 use a closed bad point, which now traps in the
+evaluator (survey section 6).
+
+Part 2, the host Pedersen and Sigma code. src/front/pedersen.c and .h
+over bn254.h: the H derivation (the ruling above), commit, the Schnorr
+opening prover and verifier, the CDS OR bit prover and verifier, the
+range prover and verifier over 32 bits, and the hash chain.
+test/zktool.c derives H, prints the known-answer words (commit of a
+fixed (p, r), a Schnorr vector, bit vectors for 0 and 1, a 32-bit range
+vector) and checks each verifier on them and on the negatives; `make
+check` runs it. Part 2 gate: the zktool rows pass, the repo counts equal
+Part 1.
+
+Part 3, the kernel text. (a) The op u256AddMod: a check.c SIGNATURE row
+after u256Eq (:182; arity 3, VIS_INTERNAL), core.h OP_U256_ADDMOD, the
+eval.c name and arity tables (:25, :50) and a reduce_op case near
+OP_U256_ADD (:2067), ir.h IR_OP_ADDMOD after IR_OP_MOD (:51), the
+lower.c op table (:399-402), the asm.c and evm.c opcode. (b) A zk
+prelude in front.c (zk_source, spliced after Position and Ledger by
+splice_after_all, front.c:303): Commitment := Trunc0 (Prod U256 U256)
+with a word-pair view for the contract; G = pair 1u 2u; H = the Part 2
+constant; Blind := U256; Opening := Prod Position Blind; commit (two
+components); PrivateFace := Quot Opening R with R o o' := Path
+Commitment (commit o) (commit o'); PublicFace := Sigma (c : Commitment)
+(Trunc1 (fiber commit c)); Loan i := Glue; PrivateLoan c; ZKProof as
+the word tuple (A, s1, s2) plus the 32 bit proofs; the unrolled
+verifier over hash, ecAdd, ecMul, u256AddMod and u256Eq. (c) The steps
+borrow, repay and liquidate as entries on the S7 ledger (Holding Active,
+Forfeited, Empty; Inv): a non-member or a Forfeited position reverts;
+liquidate after the grace window (O17, `now`). examples/zk.lang
+(kit.txt row) carries the Part 2 known-answer values. Part 3 status
+(2026-10-19): DONE. The entries are zkBorrow, zkRepay and zkLiquidate
+(borrow, repay and liquidate are design-signature names); the verifier is a
+fold over the bit proofs, not unrolled; no Loan or PrivateLoan (the Equiv of
+Part 5). Part 3 gate after staged review: examples 37, check refusals 184,
+evals 132, zk 33, the
+other counts equal Part 2, exit 0.
+
+Staged review (2026-10-19): deterministic nonce derivation separates
+Schnorr, bit and range domains, preventing blind recovery when two proof
+protocols use the same opening. The prelude requires exactly 32 range
+bits and canonical proof scalars below r, matching the host verifier.
+The refreshed vectors and regression evidence are in docs/VALIDATION.md.
+
+Part 4, the lowering and chain rows. The verifier lowers to STATICCALL
+0x06 and 0x07 (lower_curve, lower.c:583-604) and ADDMOD. test/zk.sh
+(the test/precompile.sh `call` shape) checks the commit words, a
+Schnorr proof, a bit proof and a 32-bit range proof on the chain, and
+the reverts (wrong opening, range overflow, non-member, Forfeited, a
+point not on the curve). S10 reads the gas numbers from here.
+
+Part 5, zkEquiv as a guest theorem (the O14 ruling). Forward: elim on
+the Quot; the quotSquash case uses isSet PublicFace, from isSet
+Commitment (squash0) and the Sigma of a set and a prop. Backward: elim
+on Trunc1 into the prop Sigma (q : PrivateFace) (Path Commitment
+(commit' q) c), which needs effectiveness of the set quotient (by ua,
+a code family over Quot). isoToEquiv (domain.lang:107) closes it. If
+Part 5 does not clear in two tries, the fallback above.
+
+Gate rows:
+- Part 1: the orbit rows of c3ab788 (survey section 1): 10 bn254 eval
+  rows, 1 moved eval row, 6 precompile chain rows, 1 moved precompile
+  row, path-word moved. Counts: examples 35 + 1, evals 101 + 10,
+  precompile 18 + 6.
+- Part 2: test/zktool.c rows (the H counter and words, the commit
+  known answer, Schnorr ok, bit 0 ok, bit 1 ok, range ok; the
+  negatives: a wrong s, a bit value 2, a point off the curve).
+- Part 3: examples/zk.lang eval rows (commitKA => pair, schnorrOk => 1,
+  schnorrBad => 0, bitOk0, bitOk1, bitBad => 0, rangeOk, rangeBad,
+  commitBad 2 => trap); check rows: zk-redefine (a redefined zk prelude
+  name: REFUSE_SIG), zk-guest-word (a guest word literal in a proof:
+  REFUSE_KIT), addmod-guest (u256AddMod in guest mode: REFUSE_KIT).
+- Part 4: test/zk.sh chain rows (the known-answer words on the chain
+  and the 5 reverts).
+- Part 5: eval rows for zkEquiv at the closed known-answer opening
+  (forward, backward, both round trips).
+
+Mutants (one at a time, make -B for each build, restore after each):
+wrong opening (drop the e·C term of the verifier: the Schnorr row and
+the chain row fail), range overflow (skip one OR check of the unrolled
+verifier: rangeBad passes, so its row fails), non-member step (remove
+the member test of borrow: the revert row fails), a step on a Forfeited
+position (remove the Holding case split: the revert row fails), a point
+not on the curve (g1_from_words without g1_on_curve: commitBad and the
+bn254 addBad row fail), plus one admission mutant for each new kernel
+site (the u256AddMod reduce, the zk splice, the Trunc0 set case of
+Part 5).
+
 ## 9. Open items
 
 USER ruling (S1, 2026-10-17): every default below is RULED. Where an item
@@ -843,13 +991,22 @@ has options, (a) is the ruling. O20 is a USER ruling from the request.
   transaction carries a whole configuration signed by all members (no
   anonymity).
 - O13 Commitment: (a) Pedersen over BN254 G1. (b) a keccak256 commitment
-  (no homomorphism, so the design's monoid law fails).
+  (no homomorphism, so the design's monoid law fails). RULED S9
+  (2026-10-19): (a); H by try-and-increment hash-to-curve from the tag
+  "lend-lang/H" (section 8, S9 rulings); one commitment per component of
+  Position (S9 default).
 - O14 PrivateLoan and zkEquiv: (a) the first isomorphism reading of
   section 6. (b) a primitive equivalence that the host checks on test
-  vectors only (orbit-lang O11 style).
+  vectors only (orbit-lang O11 style). RULED S9 (2026-10-19): (a), with
+  Commitment := Trunc0 (Prod U256 U256) on the guest side and quotient
+  effectiveness as a guest theorem (section 8, S9 Part 5); (b) is the
+  fallback if Part 5 does not clear.
 - O15 Proof system: (a) Sigma protocols with bit-decomposition range
   proofs (0x06, 0x07). (b) Groth16 through 0x08 with fixture proofs and an
   out-of-tree prover. (c) Bulletproofs (short proofs, high verify gas).
+  RULED S9 (2026-10-19): (a), a 32-bit decomposition with one CDS OR
+  proof per bit; the challenge split uses a new internal op u256AddMod
+  (the EVM ADDMOD opcode), which section 6 did not list.
 - O16 Interest: the rate num/den accrues per epoch; each step proves
   `debt' = debt + ceil(debt · num / den)` with a range proof on the
   remainder. Epoch length is a program constant.

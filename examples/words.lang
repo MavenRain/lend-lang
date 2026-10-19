@@ -29,3 +29,9 @@ def lawAddrLow : Path Flag (addrEq wOwner wLowOnly) flagNo := refl
 -- Entries: a trap goes up through u256Le and u256Eq.
 def addTrap : Nat -> Flag := fun (n : Nat) => u256Le (u256Add wMax (toU256 n)) wMax
 def eqTrap : Nat -> Flag := fun (n : Nat) => u256Eq (u256Add wMax (toU256 n)) wMax
+
+-- u256AddMod (S9): (x + y) mod n. wMax is 1 modulo 7. The carry row reduces both terms to 2^256 minus 2, so the sum overflows and the result is 2^256 minus 3.
+def wAddMod : U256 := u256AddMod wMax wMax 7u
+def wAddModCarry : U256 := u256AddMod 115792089237316195423570985008687907853269984665640564039457584007913129639934u 115792089237316195423570985008687907853269984665640564039457584007913129639934u wMax
+def lawAddMod : Path U256 (u256AddMod 2u 3u 4u) 1u := refl
+def addModTrap : Nat -> Flag := fun (n : Nat) => u256Eq (u256AddMod 1u 2u (toU256 n)) 0u

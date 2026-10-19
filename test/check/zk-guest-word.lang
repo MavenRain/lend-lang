@@ -1,0 +1,8 @@
+-- U256 is a kit item, thus a guest program cannot define posWord and the
+-- zk prelude never loads in guest mode: the first word, U256 in Position,
+-- is refused. The kit re-run of this row (test/gate.sh, REFUSE_KIT rows)
+-- loads the prelude after posWord and admits the word literal in the proof.
+def Position : Type 0 := U256
+def posWord : Position -> U256 := fun (p : Position) => p
+
+def oneIsOne : Path U256 1u 1u := refl

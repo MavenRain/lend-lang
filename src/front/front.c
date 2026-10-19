@@ -263,6 +263,76 @@ static const char law2_source[] =
 
 static const char *const LAW2_AFTER[] = {"IsSelfConstituting", "outcomeSet"};
 
+/* The zk prelude (S9 Part 3 (b), PLAN section 8). Pedersen commitments on
+   bn254 G1 with the generators zkG = (1, 2) and zkH (front/pedersen.c,
+   counter 0). The program gives Position and posWord : Position -> U256,
+   the word view of a position. A Commitment is a set (Trunc0) of word
+   pairs. PrivateFace is the quotient of openings by equal commitments;
+   PublicFace is a commitment with a mere opening. The names G and H are
+   DAO slots, thus zkG, zkH and zkNegG. The verifiers follow
+   front/pedersen.c: the challenge is the kernel hash chain over the
+   transcript words, the raw chain word is the ecMul scalar, the bit
+   challenge splits as addmod(e0, e1, r) == addmod(e, 0, r), and the range
+   sum is Horner from the top bit over the right fold (the start (0, 0) is
+   the point at infinity, which ecAdd and ecMul accept). An off-curve word
+   traps in ecAdd and ecMul. Loan, PrivateLoan and the forward map need the
+   Equiv of Part 5. */
+#define ZK_SOURCE_NAME "kernel/zk.lang"
+
+static const char zk_source[] =
+  "def Commitment : Type 0 := Trunc0 (Prod U256 U256)\n"
+  "def zkG : Prod U256 U256 := pair 1u 2u\n"
+  "def zkH : Prod U256 U256 := pair 16889344832318456226800756484092570876163040091388227964266892833146135894809u 3103664549520864032584950770825165644353076013427206247130791512563214797700u\n"
+  "def zkNegG : Prod U256 U256 := pair 1u 0x30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd45u\n"
+  "def r : U256 := 0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001u\n"
+  "def Blind : Type 0 := U256\n"
+  "def Opening : Type 0 := Prod Position Blind\n"
+  "def commitWords : Opening -> Prod U256 U256 := fun (o : Opening) => ecAdd (ecMul zkG (posWord (first o))) (ecMul zkH (second o))\n"
+  "def commit : Opening -> Commitment := fun (o : Opening) => trunc0 (Prod U256 U256) (commitWords o)\n"
+  "def R : Opening -> Opening -> Type 0 := fun (a : Opening) (b : Opening) => Path Commitment (commit a) (commit b)\n"
+  "def PrivateFace : Type 0 := Quot Opening R\n"
+  "def zkFiber : Commitment -> Type 0 := fun (c : Commitment) => Sigma (o : Opening) (Path Commitment (commit o) c)\n"
+  "def PublicFace : Type 0 := Sigma (c : Commitment) (Trunc1 (zkFiber c))\n"
+  "def chain2 : U256 -> U256 -> U256 := fun (a : U256) (b : U256) => hash a b\n"
+  "def zkChainPoint : U256 -> Prod U256 U256 -> U256 := fun (h : U256) (p : Prod U256 U256) => chain2 (chain2 h (first p)) (second p)\n"
+  "def schnorrChallenge : Prod U256 U256 -> Prod U256 U256 -> U256 :=\n"
+  "  fun (c : Prod U256 U256) (a : Prod U256 U256) => zkChainPoint (zkChainPoint (zkChainPoint (chain2 (first zkG) (second zkG)) zkH) c) a\n"
+  "def bitChallenge : Prod U256 U256 -> Prod U256 U256 -> Prod U256 U256 -> U256 :=\n"
+  "  fun (c : Prod U256 U256) (a0 : Prod U256 U256) (a1 : Prod U256 U256) => zkChainPoint (zkChainPoint (chain2 (first c) (second c)) a0) a1\n"
+  "def zkAnd : Flag -> Flag -> Flag := fun (a : Flag) (b : Flag) => flagIf a b flagNo\n"
+  "def zkScalarsOk : Prod U256 U256 -> Flag :=\n"
+  "  fun (s : Prod U256 U256) => zkAnd (u256Le (first s) (u256Sub r 1u)) (u256Le (second s) (u256Sub r 1u))\n"
+  "def zkPointEq : Prod U256 U256 -> Prod U256 U256 -> Flag :=\n"
+  "  fun (p : Prod U256 U256) (q : Prod U256 U256) => zkAnd (u256Eq (first p) (first q)) (u256Eq (second p) (second q))\n"
+  "def zkDlEq : Prod U256 U256 -> Prod U256 U256 -> U256 -> Prod U256 U256 -> Flag :=\n"
+  "  fun (lhs : Prod U256 U256) (a : Prod U256 U256) (e : U256) (c : Prod U256 U256) => zkPointEq lhs (ecAdd (ecMul c e) a)\n"
+  "def SchnorrProof : Type 0 := Prod (Prod U256 U256) (Prod U256 U256)\n"
+  "def BitProof : Type 0 := Prod (Prod (Prod U256 U256) (Prod U256 U256)) (Prod (Prod U256 U256) (Prod U256 U256))\n"
+  "def RangeProof : Type 0 := Prod SchnorrProof (List (Prod (Prod U256 U256) BitProof))\n"
+  "def schnorrVerify : Prod U256 U256 -> SchnorrProof -> Flag :=\n"
+  "  fun (c : Prod U256 U256) (p : SchnorrProof) =>\n"
+  "    zkAnd (zkScalarsOk (second p))\n"
+  "      (zkDlEq (ecAdd (ecMul zkG (first (second p))) (ecMul zkH (second (second p)))) (first p) (schnorrChallenge c (first p)) c)\n"
+  "def bitVerify : Prod U256 U256 -> BitProof -> Flag :=\n"
+  "  fun (c : Prod U256 U256) (p : BitProof) =>\n"
+  "    zkAnd (zkAnd (zkScalarsOk (first (second p))) (zkScalarsOk (second (second p))))\n"
+  "      (zkAnd (u256Eq (u256AddMod (first (first (second p))) (second (first (second p))) r) (u256AddMod (bitChallenge c (first (first p)) (second (first p))) 0u r))\n"
+  "      (zkAnd (zkDlEq (ecMul zkH (first (second (second p)))) (first (first p)) (first (first (second p))) c)\n"
+  "        (zkDlEq (ecMul zkH (second (second (second p)))) (second (first p)) (second (first (second p))) (ecAdd c zkNegG))))\n"
+  "def zkRangeStep : Prod (Prod U256 U256) BitProof -> Prod Flag (Prod U256 U256) -> Prod Flag (Prod U256 U256) :=\n"
+  "  fun (x : Prod (Prod U256 U256) BitProof) (acc : Prod Flag (Prod U256 U256)) =>\n"
+  "    pair (zkAnd (bitVerify (first x) (second x)) (first acc)) (ecAdd (first x) (ecMul (second acc) 2u))\n"
+  "def zkRangeEnd : Prod U256 U256 -> Prod Flag (Prod U256 U256) -> Flag :=\n"
+  "  fun (c : Prod U256 U256) (acc : Prod Flag (Prod U256 U256)) => zkAnd (first acc) (zkPointEq (second acc) c)\n"
+  "def rangeVerify : Prod U256 U256 -> RangeProof -> Flag :=\n"
+  "  fun (c : Prod U256 U256) (p : RangeProof) =>\n"
+  "    zkAnd (natEq (fold (fun (x : Prod (Prod U256 U256) BitProof) (n : Nat) => natAdd 1 n) 0 (second p)) 32)\n"
+  "      (zkAnd (schnorrVerify c (first p))\n"
+  "        (zkRangeEnd c (fold (fun (x : Prod (Prod U256 U256) BitProof) (acc : Prod Flag (Prod U256 U256)) => zkRangeStep x acc) (pair flagYes (pair 0u 0u)) (second p))))\n";
+
+/* The zk prelude comes after Position and posWord. */
+static const char *const ZK_AFTER[] = {"Position", "posWord"};
+
 /* Put the declarations of TEXT directly after the declaration AT, with the
    trusted origin ORIGIN_DOMAIN. Check order is declaration order, so a
    refused declaration at or before AT stops before them. */
@@ -317,13 +387,15 @@ static int splice_after_all(Arena *arena, size_t first, const char *const *names
    Orbit and orbitProj directly after the program `def actChoice`, the DAO
    prelude after the last of its slots and Orbit (S7), the ledger after
    Position and the DAO prelude (S7 Part 2), and law 2 after
-   IsSelfConstituting and outcomeSet (S8 Part 2). */
+   IsSelfConstituting and outcomeSet (S8 Part 2), and the zk prelude after
+   Position and posWord (S9 Part 3). */
 static int splice_kernel(Arena *arena, size_t first, DeclList *out, Diag *diag) {
   return splice_after(arena, first, "Agent", MEMBERSHIP_SOURCE_NAME, membership_source, sizeof membership_source - 1u, out, diag)
       && splice_after(arena, first, "actChoice", ORBIT_SOURCE_NAME, orbit_source, sizeof orbit_source - 1u, out, diag)
       && splice_after_all(arena, first, DAO_AFTER, sizeof DAO_AFTER / sizeof DAO_AFTER[0], DAO_SOURCE_NAME, dao_source, sizeof dao_source - 1u, out, diag)
       && splice_after_all(arena, first, LEDGER_AFTER, sizeof LEDGER_AFTER / sizeof LEDGER_AFTER[0], LEDGER_SOURCE_NAME, ledger_source, sizeof ledger_source - 1u, out, diag)
-      && splice_after_all(arena, first, LAW2_AFTER, sizeof LAW2_AFTER / sizeof LAW2_AFTER[0], LAW2_SOURCE_NAME, law2_source, sizeof law2_source - 1u, out, diag);
+      && splice_after_all(arena, first, LAW2_AFTER, sizeof LAW2_AFTER / sizeof LAW2_AFTER[0], LAW2_SOURCE_NAME, law2_source, sizeof law2_source - 1u, out, diag)
+      && splice_after_all(arena, first, ZK_AFTER, sizeof ZK_AFTER / sizeof ZK_AFTER[0], ZK_SOURCE_NAME, zk_source, sizeof zk_source - 1u, out, diag);
 }
 
 int front_load(Arena *arena, const char *source, const char *text, size_t len, DeclList *out, Diag *diag) {

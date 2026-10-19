@@ -171,6 +171,15 @@ static int emit_binary(Emit *e, const IrExpr *x) {
   static const Op add_trap[] = {EVM_OP_DUP1, EVM_OP_SWAP2, EVM_OP_ADD, EVM_OP_DUP1,
                                 EVM_OP_SWAP2, EVM_OP_SWAP1, EVM_OP_LT};
   Asm *a = e->a;
+  if (x->op == IR_OP_ADDMOD) {
+    /* ADDMOD pops a from the top, then b, then N: THIRD first with the zero test, then RIGHT, then LEFT. */
+    if (!emit_expr(e, x->third)) return 0;
+    emit_ops(a, (const Op[]){EVM_OP_DUP1, EVM_OP_ISZERO}, 2);
+    asm_jump_if(a, e->trap);
+    if (!emit_expr(e, x->right) || !emit_expr(e, x->left)) return 0;
+    asm_op(a, EVM_OP_ADDMOD);
+    return 1;
+  }
   if (x->op == IR_OP_DIV || x->op == IR_OP_MOD) {
     if (!emit_expr(e, x->right)) return 0;
     emit_ops(a, (const Op[]){EVM_OP_DUP1, EVM_OP_ISZERO}, 2);
@@ -230,6 +239,7 @@ static int emit_binary(Emit *e, const IrExpr *x) {
     asm_op(a, EVM_OP_SHA3);
     return 1;
   case IR_OP_DIV:
+  case IR_OP_ADDMOD:
   case IR_OP_MOD: return 0;
   }
   return 0;

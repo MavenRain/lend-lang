@@ -64,6 +64,7 @@ typedef enum {
   OP_U256_SUB,
   OP_U256_LE,
   OP_U256_EQ,
+  OP_U256_ADDMOD,
   OP_TO_U256,
   OP_ADDR_EQ,
   /* sealed-lang S2 (R14, R16 to R18, R20): the base span. The curve ops
