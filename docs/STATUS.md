@@ -740,3 +740,138 @@ is INVALID.
 | Part 3 | wf-builder Fable xhigh, then opus xhigh | died in session 6 (429; `reasoning_extraction`), before a file change |
 | records, stage | wf-builder Fable xhigh, then opus xhigh | died in session 8 (429; `reasoning_extraction`), before a file change |
 | sessions 1 to 9 | main loop | by hand; the USER applied the session 4 src changes (S7-p2-apply.sh) |
+
+## S8
+
+S8 ports orbit-lang B1 676c7a8 (dependent elim for domain families) and
+B2 eafa1df (the outcomeSet and menu slots, with lend names) on 7d6a401,
+the USER S7 commit. It adds law 2 uniqueness and the O27 (b) fast path,
+and with it the guest term amendExit in examples/dao.lang. amendPath
+stays a reserved SIG_DEFINED name. PLAN section 8, "Builder call (S8,
+2026-10-18)", has the design and the result paragraphs.
+
+### Counts
+
+| Gate line | lend-lang S7 | Part 1 (session 5) | Part 2 (session 7) | Part 3 (session 11) | lend-lang S8 |
+|---|---|---|---|---|---|
+| examples | 34 | 35 | 35 | 35 | 35 |
+| parse refusals | 19 | 19 | 19 | 19 | 19 |
+| check refusals | 170 | 175 | 179 | 180 | 181 |
+| kit-only refusals | 22 | 22 | 22 | 22 | 22 |
+| evals | 88 | 96 | 98 | 101 | 101 |
+| runs, run refusals | 5, 10 | 5, 10 | 5, 10 | 5, 10 | 5, 10 |
+| asmtool checks | 8 | 8 | 8 | 8 | 8 |
+| builds | 3 | 3 | 3 | 3 | 3 |
+| lower refusals | 16 | 16 | 16 | 16 | 16 |
+| build checks | 33 | 33 | 33 | 33 | 33 |
+| dispatch | 20 | 20 | 20 | 20 | 20 |
+
+Part 1 adds 1 example (elim), 5 check refusals and 8 evals. Part 2 adds
+4 check refusals and 2 evals. Part 3 adds 1 check refusal (amend-end)
+and 3 evals. Session 12 adds 1 check refusal (menu-early). The evm
+steps (43) and the other counts equal S7. The gate logs are
+~/Documents/lend-lang-work/S8-p1-port-gate.log, S8-p2-port-gate.log,
+S8-s11-port-gate.log and S8-s12-port-gate.log.
+
+### Parts
+
+- Part 0 (session 2): the O27 (b) probe, in a copy only. The conv head
+  alone (try 1) clears lFill and dh. The conv head with the
+  head-preserving quote_value (try 2) clears r12, a1, lFill, a2h and dh
+  and the four controls. The copy gate counts equal S7. Record:
+  ~/Documents/lend-lang-work/S8-o27b-probe.md.
+- Part 1 (sessions 3 to 5): the B1 port (S8-p1.patch, 1175 lines).
+  check.c takes the B1 elim_on_family, and the S6 uniform-family branch
+  drops out. Try 1 failed one lend S6 test (test/fronttool.c, the
+  overapplied Unit eliminator that ends in swOff). USER ruling (a): if
+  the motive has no binder annotation and the scrutinee scan gives a
+  family, rule_elim checks the family reading on a trial Call
+  (elim_trial), then the Unit or Sum reading. If both fail, the family
+  failure stays. New: examples/elim.lang and the elim-* rows.
+- Part 2 (sessions 6 and 7): check.c has the SIGNATURE rows outcomeSet
+  and menu (SIG_SLOT) and OP_SLOTS (actChoice {G, Choice}, outcomeSet
+  {D}, menu {D} with kernel Constitution). front.c `law2_source`
+  (orbitEq, orbitSet, descentPoint, descentUnique) goes after the last
+  of LAW2_AFTER (IsSelfConstituting, outcomeSet), after the ledger
+  splice. descentUnique is an Orbit elim into `Path D (L z) (K z)`: the
+  quotEq case is a PathP by outcomeSet, and the quotSquash case is a
+  square by isSet D. examples/dao.lang has outcomeSet, L1 and law2.
+- Part 3 (sessions 8 to 11): amendPath is SIG_DEFINED, thus the guest
+  term is amendExit (USER ruling, session 8). With the fast path, the
+  M face with the ledger face took more than 20000000 eval steps
+  (EVAL_FUEL). Root cause (record S8-s9-diag.md): the loop step of
+  conv_loop compares the last argument of an op without the two fast
+  tests of conv_values, thus the Prod type of the last Config field
+  compares the unfolded Glue types of LendingLedger. Fix
+  (S8-s10-fix.patch, +7 lines): after the switch, if a == b or
+  conv_head, conv_loop returns 1. The M face with the ledger face then
+  takes 98155 steps. The port: S8-o27b.patch (eval.c, core.h),
+  S8-s10-fix.patch and amendExit (S8-s11-resolve.py).
+- Session 12: the kill rows for m2 and m3 (USER rulings, session 11).
+  examples/dao.lang has `def menu : D -> Constitution := fun (d : D) =>
+  c0` after c0. test/check/menu-early.lang defines menu before the DAO
+  prelude (REFUSE_SIG). The Part 1 mutants p1 to p4 run.
+
+| Row | Code | PLAN gate row |
+|---|---|---|
+| elim-family-count | TYPE_MISMATCH | B1 |
+| elim-path-case | PATH_END | B1 |
+| elim-motive-index | TYPE_MISMATCH | B1 |
+| elim-block | TYPE_MISMATCH | B1 |
+| elim-family-prop | NAME_UNKNOWN | B1 |
+| outcome-set-type | REFUSE_SIG | a slot at a wrong type |
+| menu-type | REFUSE_SIG | a slot at a wrong type |
+| menu-early | REFUSE_SIG | menu before the DAO prelude (the m3 kill row) |
+| dao-no-set | NAME_UNKNOWN | a law 2 use without outcomeSet |
+| dao-redefine | REFUSE_SIG | a redefined lend SIG_DEFINED name |
+| amend-end | PATH_END | a wrong amendExit end |
+
+Eval rows: elim bagTwoCountE, replicateTwo, swapAt0, swapAt1, bagSwapE,
+quotThree, quotEqAt and hcompE (Part 1); dao law2At0 and law2At1, both
+`inl unit` (Part 2); dao amendHold0 `inl (pair unit unit)`, amendHold1
+`inr (inl (pair unit unit))` and amendOther1 `inr (inr unit)` (Part 3).
+
+### Mutants
+
+~/Documents/lend-lang-work/S8-s11-mutants.py (m1 to m7, session 11) and
+S8-s12-mutants.py (m1 to m7 again and p1 to p4, session 12), in the copy
+S8-s11-tree. Each mutant is an exact replace (anchor count 1), then
+`make -B check`, then a restore. Logs: S8-s11-mutants.out and
+S8-s12-p1-mutants.out.
+
+| Id | Target | Change | Result | Killer |
+|---|---|---|---|---|
+| m1 | check.c OP_SLOTS outcomeSet | the row name is outcomeSetX | KILLED | dao.lang REFUSE_SIG; dao law2At0, law2At1 |
+| m2 | check.c OP_SLOTS menu | the row name is menuX | KILLED (session 12) | dao.lang REFUSE_SIG at menu ("an op slot type"); dao law2At0. Session 11: SURVIVED |
+| m3 | check.c slot_ok kernel test | `0 &&` before find_def Constitution | KILLED (session 12) | menu-early: REFUSE_REC in place of REFUSE_SIG. Session 11: SURVIVED |
+| m4 | front.c LAW2_AFTER | no "outcomeSet" | KILLED | dao.lang REFUSE_REC descentUnique; ledger, orbit NAME_UNKNOWN |
+| m5 | front.c law2 splice | `(1 \|\| splice_after_all(...))` | KILLED | dao.lang NAME_UNKNOWN descentUnique; dao law2At0, law2At1 |
+| m6 | eval.c conv_loop fast test | the 2 lines deleted | KILLED | dao.lang, amend-end, dao law2At0: EVAL_FUEL amendExit |
+| m7 | eval.c conv_head argument test | `0 &&` before conv_values | KILLED | ua-not-refl, ua-two-proofs admitted (PATH_UIP) |
+| p1 | check.c elim_on_family motive arity | `0 &&` before the index_count test | KILLED | elim-motive-index: INTERNAL (an evaluator error) in place of TYPE_MISMATCH |
+| p2 | check.c rule_elim candidate fallback | the Unit or Sum trial never runs | KILLED | fronttool domain (Switch): TYPE_MISMATCH in place of ok |
+| p3 | check.c fold_image path-case IH end | the end is v, not the IH variable | KILLED | dao.lang PATH_UIP descentUnique; elim.lang PATH_END toTruncE; elim evals |
+| p4 | check.c fold_image square-face IH path | the face is v, not the IH path | KILLED | dao.lang PATH_UIP descentUnique; elim.lang PATH_UIP toTruncE; elim evals |
+
+The loop kills 11 of 11 mutants with 1 admission mutant (m7). In
+session 11, try 1 of m1 and m2 (the row type swapped to the other SIG_
+term) and of m5 (the line deleted) left a static function unused. The
+clang check refused it, thus these tries are INVALID, and the table has
+try 2. A site study (read only, session 12) found no single edit in the
+S8-only elim code that admits a program the pristine checker refuses:
+p2 to p4 refuse admitted programs, and p1 changes the refusal class. No
+log has a compile error. m0-restored is GREEN, and the copy src equals
+the repo src after each loop.
+
+### Builders
+
+| Stage | Tier | Result |
+|---|---|---|
+| Parts 0 to 3 | wf-builder Fable xhigh | died in session 1, 429, before a file change |
+| survey | wf-mechanical | session 1; a hook blocked its write, the main loop wrote S8-survey.md |
+| Part 0 probe | wf-builder opus xhigh | session 2: stopped at the agent call budget before the probe; the main loop ran its probe script |
+| Part 1 probe | wf-builder Fable xhigh, then opus xhigh | died in session 3 (429; `reasoning_extraction`), before a file change |
+| Part 1 site study | wf-mechanical | session 12, read only |
+| session 12 port, repo gate | wf-closer | session 12 |
+| records | wf-builder Fable xhigh | died in session 12, `reasoning_extraction`, before a file change |
+| sessions 1 to 13 | main loop | by hand |

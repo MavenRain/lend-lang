@@ -1,0 +1,13 @@
+-- The slot menu must come after D and after the DAO prelude, which gives
+-- Constitution. Here menu comes directly after D, before the DAO prelude.
+-- Constitution is not defined at menu, thus the slot check refuses it.
+def Agent : Type 0 := Sum Unit Unit
+def Choice : Type 0 := Sum Unit Unit
+def D : Type 0 := Choice
+def menu : D -> D := fun (d : D) => d
+def G : Type 0 := Sum Unit Unit
+
+def flip : Choice -> Choice := fun (c : Choice) => either (fun (u : Unit) => inr unit) (fun (u : Unit) => inl unit) c
+
+def actChoice : G -> Choice -> Choice :=
+  fun (g : G) (c : Choice) => either (fun (u : Unit) => c) (fun (u : Unit) => flip c) g

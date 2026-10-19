@@ -222,7 +222,7 @@ keccak256 Fiat-Shamir challenge. A Schnorr proof shows knowledge of an
 opening. A range check uses a bit decomposition with one OR proof per bit.
 The verifier needs only ecAdd (0x06) and ecMul (0x07). There is no trusted
 setup and no circuit compiler, and the TinyCC host runs the prover. Cost:
-about 4 ecMul per range bit; the S9 gas table gives the numbers.
+about 4 ecMul per range bit; the S10 gas table gives the numbers.
 
 | Step | Public face (contract) | ZKProof shows |
 |---|---|---|
@@ -271,9 +271,10 @@ for each build), the counts in docs/STATUS.md, and a USER commit.
 | S5 | Glue, ua, uaBeta, hcomp at Glue and U (port of orbit-lang a12973a): DONE 2026-10-18 | Glue boundary mismatch, ua on a non-equivalence |
 | S6 | HIITs, QIITs, dependent elim on a HIT with PathP cases; Membership as a kernel HIT: DONE 2026-10-18 | wrong index in a path constructor, inductive-inductive order, a missing PathP case, admit without `M a ≡ 0` |
 | S7 | DAO prelude: Obj, act, ChoiceRule, Aggregation, Gov, IsFixedPointObj, Config, amendPath; LendingLedger over Membership by ua: DONE 2026-10-18, without amendPath (O27) | a non-invariant constitution, a wrong unit, an exit that does not forfeit, the ∃ of IsSelfConstituting as a Prop |
-| S8 | ZK ledger: Pedersen on BN254 in C, Sigma-protocol verifier lowering, zkEquiv, PrivateLoan, borrow, repay, liquidate | known-answer vectors; mutants: wrong opening, range overflow, non-member step, step on a Forfeited position, point not on the curve |
-| S9 | contract end to end: deploy, vote, amend, borrow, repay, liquidate; host and EVM differential; gas table; chain probe | differential rows, revert rows, EIP-170 and EIP-3860 size limits |
-| S10 | regimes (optional, O23), docs, final gate | regime rows |
+| S8 | port orbit-lang B1 676c7a8 (dependent elim for domain families) and B2 eafa1df (outcomeSet and menu slots, lend names, separate splice); O27 option (b) probe, then amendPath if it clears; law 2 uniqueness (USER ruling S8): DONE 2026-10-18, the guest term is amendExit (amendPath stays reserved) | the orbit-lang B1 rows (elim-*); the B2 rows with lend names (outcome-set-type, menu-type, dao-no-set, dao-redefine); amendPath rows if O27 (b) clears |
+| S9 | ZK ledger: Pedersen on BN254 in C, Sigma-protocol verifier lowering, zkEquiv, PrivateLoan, borrow, repay, liquidate (moved from S8, USER ruling S8) | known-answer vectors; mutants: wrong opening, range overflow, non-member step, step on a Forfeited position, point not on the curve |
+| S10 | contract end to end: deploy, vote, amend, borrow, repay, liquidate; host and EVM differential; gas table; chain probe | differential rows, revert rows, EIP-170 and EIP-3860 size limits |
+| S11 | regimes (optional, O23), docs, final gate | regime rows |
 
 Builder call (S2, 2026-10-17): the port of orbit-lang 7734007. Identity
 check: on d4fdb2e, the trees src, test, domain, examples, Makefile,
@@ -651,6 +652,153 @@ Deviations from the builder call:
    and scPath (all ok) and a comment that tells why it has no amendPath.
    O27 has the options. S7 has no kernel fix.
 
+Builder call (S8, 2026-10-18). Survey:
+~/Documents/lend-lang-work/S8-survey.md. O27 probe:
+~/Documents/lend-lang-work/S8-o27-probe.md.
+
+USER rulings (S8, 2026-10-18; AskUserQuestion, all recommended):
+- O27: (b), then (c) if (b) does not clear (section 9, O27).
+- Slice order: S8 = the port of orbit-lang B1 676c7a8 and B2 eafa1df,
+  the O27 (b) probe, amendPath if (b) clears, and law 2 uniqueness. The
+  ZK ledger moves to S9. The later slices move by one (the S7 ruling
+  "S9" for O8 is now S10).
+- B2 slots: a separate splice. `outcomeSet : isSet D` and `menu : D ->
+  Constitution` with lend names. They do not join DAO_AFTER
+  (front.c:69). The law 2 block splices after IsSelfConstituting and
+  outcomeSet. The S7 rows and examples do not change. S8 does not port
+  the orbit Config, Aggregation, Tally, aggregate, gov or amend (they
+  clash in type with lend).
+
+Part 0, O27 (b) probe (a copy only, no repo change). def_value
+(eval.c:519) caches the unfolded body, and an applied def gives a new
+value at each use, thus `a == b` (eval.c:3318) does not catch it. The
+probe adds a Value field (core.h:227) with the kernel def index and the
+argument vector, set when apply_value saturates a kernel def, and a test
+at the top of conv_values (eval.c:3313): the same def index on both
+sides, then conv the arguments, with a fallback to the unfold. Pass:
+r12, a1, lFill, a2h and dh do not reach the arena limit, and the S7 gate
+counts do not change. If all five pass, Part 3 ports it. If not, (c).
+
+Part 1, the B1 port (dependent elim for domain families). Sites: check.c
+elim_family (:835), elim_at_domain (:960), rule_elim (:1020),
+apply_known (:2569); eval.c reduce_elim (:733, :790). Take the B1
+elim_on_family and remove the S6 uniform-family branch. Keep the lend
+HIT_BOUNDARY "cannot eliminate" test (check.c:990-991). Probe the
+Membership and Holding elims first: the ledger splice case arity must
+not change. New files: examples/elim.lang, test/check/elim-block.lang,
+elim-family-count.lang, elim-family-prop.lang, elim-motive-index.lang,
+elim-path-case.lang; examples/kit.txt and test/check/kit.txt one row
+each; test/fronttool.c (+31).
+
+Part 2, the B2 slots and law 2. OP_SLOTS rows for outcomeSet and menu,
+slot_ok, slot_shown, sig_row and the kernel_sig message. Law 2
+uniqueness: an elim on Orbit (Quot) into `fun z => Path D (L z) (L' z)`.
+The quot case is the factorization, the quotEq case is a PathP, and the
+quotSquash case is a square by isSet D (outcomeSet).
+
+Part 3 (only if Part 0 passes): the fast path in src/front/eval.c, and
+amendPath (section 8, S7 Part 3 shape) in examples/dao.lang.
+
+Part 0 result (2026-10-18): PASS. The conv head alone (try 1) clears
+only lFill and dh. The conv head with the head-preserving quote_value
+(try 2) clears all five shapes and the four controls. The copy gate
+counts do not change. Thus Part 3 ports both parts of
+~/Documents/lend-lang-work/S8-o27b.patch (src/front/eval.c,
+src/front/core.h). Record: lend-lang-work/S8-o27b-probe.md.
+
+Part 1 result (2026-10-18): PASS on try 2. Try 1 failed one lend S6 test
+(test/fronttool.c, the overapplied Unit eliminator that ends in swOff):
+the B1 elim_domain read it as a Switch elim. USER ruling (a): the B1
+rule_elim keeps the lend S6 candidate fallback. If the motive has no
+binder annotation and the scrutinee scan gives a family, rule_elim checks
+the family reading on a trial Call. If that fails, it tries the Unit or
+Sum position. If both fail, the family failure stays. The repo gate
+`make -B check` is GREEN, exit 0: examples 35, check refusals 175,
+kit-only refusals 22, evals 96, the other counts equal to S7. Record:
+lend-lang-work/S8-p1-probe.md.
+
+Part 2 result (2026-10-18): PASS. check.c has the SIGNATURE rows
+outcomeSet and menu (SIG_SLOT) and OP_SLOTS (actChoice {G, Choice},
+outcomeSet {D}, menu {D} with kernel Constitution). front.c splices the
+law 2 block (orbitEq to descentUnique) after IsSelfConstituting and
+outcomeSet, after the ledger splice. examples/dao.lang has outcomeSet, L1
+and law2. The repo gate `make -B check` is GREEN, exit 0: check refusals
+179, evals 98, the other counts equal to Part 1. Record:
+lend-lang-work/S8-p2-build.md.
+
+Part 3 probe (session 8, 2026-10-18): S8-o27b.patch applies to the repo
+tree with no reject. Two problems:
+1. amendPath is a SIG_DEFINED name (section 3). Since Part 2, check_sig
+   refuses a program definition of it (REFUSE_SIG, the dao-redefine
+   class).
+2. With the fast path, the amend term (renamed) does not reach the arena
+   limit, but it takes more than 20000000 eval steps (EVAL_FUEL). Bisect
+   in the copy: the F face alone (amendGov @ i, M and the ledger constant)
+   is ok, and `refl : Path Config cEnd cEnd` is ok. The M face with the
+   ledger face (exitOne @ i, lFill @ i, F0 constant) is EVAL_FUEL. lFill
+   alone is ok.
+Record: lend-lang-work/S8-p3-probe.md. The repo has no Part 3 change.
+
+USER rulings (S8 session 8, 2026-10-18; AskUserQuestion, all recommended):
+- Part 3: find the conv that takes the fuel in the M face first, then a
+  ruling. The fast-path port waits for that result.
+- Name: the guest term is amendExit in examples/dao.lang. amendPath stays
+  a reserved SIG_DEFINED name for a later kernel operator.
+
+Part 3 result (sessions 9 to 11, 2026-10-18): PASS. All rows use one fuel
+budget, the default of 20000000 eval steps. Diagnose (sessions 9 and 10,
+record lend-lang-work/S8-s9-diag.md): with the M face, the Prod type of
+the last Config field takes the steps. A Sigma with the same fields is
+cheap (104342 steps). A Prod does not end at 200000000 steps. Root cause:
+conv_loop (src/front/eval.c) compares the last argument of an op in its
+loop step, and that step does not do the two fast tests of conv_values
+(a == b, conv_head). Thus the compare of the ledger field of a Prod type
+compares the unfolded Glue types of LendingLedger. A Sigma goes through
+conv_binder and conv_values, thus it keeps the fast tests. USER ruling
+(session 10): keep the head fast path on Prod. The probe showed that the
+head is not lost (the two ledger arguments have the same head), but the
+loop step does not test it. The fix has the same intent: after the switch
+in conv_loop, if a == b or conv_head, conv_loop returns 1
+(lend-lang-work/S8-s10-fix.patch, +7 lines). Steps after the fix: the M
+face with the ledger face 98155, lFill 74593 (80555 before). The port
+(session 11): S8-o27b.patch (eval.c, core.h), S8-s10-fix.patch, then
+amendExit (lend-lang-work/S8-s11-resolve.py) in examples/dao.lang, the
+check row amend-end (PATH_END) and 3 dao eval rows (amendHold0,
+amendHold1, amendOther1). The repo gate `make -B check` is GREEN, exit 0:
+examples 35, check refusals 180, evals 101, the other counts equal to
+Part 2. Mutants: docs/STATUS.md section S8.
+
+Kill rows (session 12, 2026-10-18): the USER rulings of session 11 add
+two rows for the survivors m2 and m3. examples/dao.lang has a well-typed
+`def menu : D -> Constitution` after c0 (m2). test/check/menu-early.lang
+defines menu before the DAO prelude, thus the slot test refuses it
+(REFUSE_SIG); with m3 it is REFUSE_REC. The Part 1 mutants (the motive
+arity, the candidate fallback, the path-case IH end and the square-face
+IH path) are all KILLED. The repo gate `make -B check` is GREEN, exit 0:
+examples 35, check refusals 181, evals 101, the other counts equal to
+Part 3.
+
+Gate rows:
+- B1: 5 check rows after elim-motive-dom: elim-family-count
+  TYPE_MISMATCH, elim-path-case PATH_END, elim-motive-index
+  TYPE_MISMATCH, elim-block TYPE_MISMATCH, elim-family-prop
+  NAME_UNKNOWN. 8 eval rows: bagTwoCountE, replicateTwo, swapAt0,
+  swapAt1, bagSwapE, quotThree, quotEqAt, hcompE.
+- B2 with lend names: outcome-set-type and menu-type (a slot at a wrong
+  type), dao-no-set (a law 2 use without outcomeSet: NAME_UNKNOWN),
+  dao-redefine (a redefined lend SIG_DEFINED name: REFUSE_SIG). New lend
+  dao eval rows (law 2 at the closed L0) in place of the orbit tallied,
+  flippedTally, nextRule and amended.
+- Counts: examples 34 + 1, check refusals 170 + 5 + the B2 rows, evals
+  88 + 8 + the dao rows. amendPath rows only if Part 0 passes.
+
+Mutants: one admission mutant for each new site (the elim_on_family
+motive arity, the rule_elim candidate fallback (the Unit or Sum reading
+after a failed family reading, USER ruling (a) S8), the path-case PathP
+test, the squash square case, the
+outcomeSet slot_ok, the menu slot_ok, the law 2 splice, and the
+fast-path argument test if S8 ports it). make -B for each build.
+
 ## 9. Open items
 
 USER ruling (S1, 2026-10-17): every default below is RULED. Where an item
@@ -725,7 +873,7 @@ has options, (a) is the ruling. O20 is a USER ruling from the request.
   an RPC probe (orbit-lang O16). The repo gate runs only the kit EVM runner.
 - O23 Regimes: the design says amendments inherit the three UAT regimes.
   Default: the orbit-lang O8 and O9 reading (a three-point coproduct the
-  compiler computes from the menu), at S10.
+  compiler computes from the menu), at S11.
 - O24 Scope of the claim: lend-lang proves the laws on the discrete
   quotient reading (U/Characterization.lean:81). Hiding, binding, soundness
   and zero knowledge are assumptions in docs/VALIDATION.md.
@@ -733,12 +881,18 @@ has options, (a) is the ruling. O20 is a USER ruling from the request.
   commits; it does not change orbit-lang.
 - O26 Off-chain commands: `langc prove` writes the calldata of vote,
   borrow and repay; `langc run` evaluates steps and amendments in the host.
-- O27 Conv limit (S7; NOT RULED, the USER rules it at the start of S8):
-  the conv OOM family oomv-a2, oomv-d, oomv-e and oomv-f blocks
-  amendPath (section 8, "Result (S7, ...)", deviation 7). Options, no
-  ruling: (a) the CONV_CLOS same_closure test
-  (~/Documents/lend-lang-work/S7-p2-scratch/oom-patch.py, block 2), the
-  known fix candidate; (b) a conv fast path for the Equiv or the Glue of
-  a ledger step: compare the kernel def and its arguments before the
-  unfold (a hypothesis, not tested); (c) keep amendPath out, with the
-  laws only.
+- O27 Conv limit (S7; RULED S8, 2026-10-18: (b), then (c) if (b) does
+  not clear): the conv OOM family oomv-a2, oomv-d, oomv-e and oomv-f
+  blocks amendPath (section 8, "Result (S7, ...)", deviation 7). Options:
+  (a) the CONV_CLOS same_closure test
+  (~/Documents/lend-lang-work/S7-p2-scratch/oom-patch.py, block 2);
+  (b) a conv fast path for the Equiv or the Glue of a ledger step:
+  compare the kernel def and its arguments before the unfold; (c) keep
+  amendPath out, with the laws only. S8 probe on a patched copy of
+  7d6a401 (~/Documents/lend-lang-work/S8-o27-probe.md): (a) clears only
+  oomv-d. oomv-a2, oomv-e, oomv-f and the amendPath ledger fill stay at
+  the 1 GB arena limit. Ruling: S8 probes (b) in a copy against the five
+  shapes (r12, a1, lFill, a2h, dh). If (b) clears all five, S8 ports it
+  and adds amendPath. If not, (c): amendPath stays out.
+  Part 0 PASS (2026-10-18): (b) clears all five shapes only with the
+  head-preserving quote_value (S8-o27b-probe.md). S8 Part 3 ports it.

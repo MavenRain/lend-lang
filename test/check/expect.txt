@@ -138,6 +138,11 @@ elim-scrutinee.lang TYPE_MISMATCH
 elim-motive-prop.lang NAME_UNKNOWN
 elim-path-k.lang TYPE_MISMATCH
 elim-motive-dom.lang TYPE_MISMATCH
+elim-family-count.lang TYPE_MISMATCH
+elim-path-case.lang PATH_END
+elim-motive-index.lang TYPE_MISMATCH
+elim-block.lang TYPE_MISMATCH
+elim-family-prop.lang NAME_UNKNOWN
 unit-no-eta.lang PATH_END
 orbit-fold-no-set.lang TYPE_MISMATCH
 orbit-fake-set.lang PATH_END
@@ -168,3 +173,9 @@ dao-constitution-refl.lang PATH_END
 ledger-exit-keeps.lang PATH_END
 dao-sc-prop.lang TYPE_MISMATCH
 dao-wrong-unit.lang PATH_END
+outcome-set-type.lang REFUSE_SIG
+menu-type.lang REFUSE_SIG
+menu-early.lang REFUSE_SIG
+dao-no-set.lang NAME_UNKNOWN
+dao-redefine.lang REFUSE_SIG
+amend-end.lang PATH_END

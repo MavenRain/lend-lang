@@ -244,6 +244,12 @@ struct Value {
      one empty conjunction. */
   const IConj *conj;
   uint32_t conj_count;
+  /* The O27 (b) probe: a value that is a kernel definition, or an
+     application of one, keeps the head. HEAD is the definition index
+     + 1 (0: no head), and HEAD_ARGS are the arguments in order. */
+  uint32_t head;
+  const Value *const *head_args;
+  uint32_t head_argc;
 };
 
 typedef struct {

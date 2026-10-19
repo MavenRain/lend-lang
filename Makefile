@@ -8,7 +8,7 @@ TARGET = src/evm.c src/asm.c
 SRC = src/main.c $(FRONT) $(TARGET) src/lower.c
 TOOL = test/asmtool.c $(TARGET) src/keccak.c
 FRONT_TOOL = test/fronttool.c $(filter-out src/front/front.c,$(FRONT))
-PATH_TOOL = test/pathtool.c $(filter-out src/front/front.c,$(FRONT))
+PATH_TOOL = test/pathtool.c $(filter-out src/front/front.c src/front/eval.c,$(FRONT))
 RUN_TOOL = test/runtool.c $(FRONT)
 SLOT_TOOL = test/slottool.c src/keccak.c
 BUILD_TOOL = test/buildtool.c $(TARGET) src/keccak.c
@@ -36,7 +36,7 @@ build/fronttool: $(FRONT_TOOL) $(HEADERS)
 	mkdir -p build
 	$(TCC) $(CFLAGS) -o build/fronttool $(FRONT_TOOL)
 
-build/pathtool: $(PATH_TOOL) $(HEADERS)
+build/pathtool: $(PATH_TOOL) src/front/eval.c $(HEADERS)
 	mkdir -p build
 	$(TCC) $(CFLAGS) -o build/pathtool $(PATH_TOOL)
 

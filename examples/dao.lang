@@ -1,6 +1,8 @@
 -- The DAO prelude (slice S7, PLAN section 8, Part 1), guest mode: the design signature slots and actChoice of orbit.lang.
 -- The kernel gives Obj, act, ChoiceRule, Constitution, Aggregation, Gov, IsFixedPointObj and IsSelfConstituting after the last slot.
 -- With the slot Position, the kernel also gives the ledger (Holding, Inv, Ledger, LendingLedger) and Config after IsSelfConstituting (Part 2).
+-- With the slot outcomeSet (isSet D), the kernel also gives law 2 (orbitEq, orbitSet, descentPoint and
+-- descentUnique) after IsSelfConstituting and outcomeSet (slice S8, Part 2).
 def Agent : Type 0 := Sum Unit Unit
 def Choice : Type 0 := Sum Unit Unit
 def D : Type 0 := Choice
@@ -15,6 +17,9 @@ def actChoice : G -> Choice -> Choice :=
 -- F0: the constant rule. actChoice does not change it, so refl is its invariance proof.
 def F0 : ChoiceRule Obj D := fun (x : Obj) => inl unit
 def c0 : Constitution := pack F0 (fun (g : G) (x : Obj) => refl)
+
+-- menu: the slot menu (D -> Constitution), after D and the DAO prelude. Each outcome gives c0.
+def menu : D -> Constitution := fun (d : D) => c0
 
 -- L0: the constant rule on orbits. It factors F0 through orbitProj.
 def L0 : Aggregation F0 := pack (fun (o : Orbit) => inl unit) (fun (x : Obj) => refl)
@@ -40,5 +45,90 @@ def govUnit : (x : Obj) -> Path D (Gov F0 L0 x) (F0 x) := fun (x : Obj) => refl
 -- Self-constitution as a PathP over IsFixedPointObj: the constant path at sc0.
 def scPath : PathP (fun (i : I) => IsFixedPointObj F0 L0) sc0 sc0 := fun (i : I) => sc0
 
--- This file has no amendPath (a Path Config). The conv of a Config value, and the conv
--- of the Equiv of a ledger step, reach the arena limit. The S7 record gives the shapes.
+-- amendExit (slice S8, PLAN section 8, Part 3): the amend of the exit of the member inr unit, a Path Config.
+-- The M face is exitOne. The F face is amendGov (Gov F0 L0 is F0). L0 and sc0 do not change.
+-- The ledger face is the transport fill over LendingLedger along exitOne. nobody .. lExit as in examples/ledger.lang.
+-- The S7 kernel did not check it (arena limit, PLAN section 8, deviation 7). The O27 (b) fast path in conv
+-- (the same kernel definition at equal arguments) and the quote that keeps the head clear it.
+def nobody : Agent -> Sum Unit Unit := fun (b : Agent) => inl unit
+def onlyOne : Agent -> Sum Unit Unit := fun (b : Agent) => either (fun (u : Unit) => inl unit) (fun (u : Unit) => inr unit) b
+def sameElseBack : (b : Agent) -> Sum (Path Agent b (inr unit)) (Path (Sum Unit Unit) (onlyOne b) (nobody b)) :=
+  fun (b : Agent) => elim (fun (c : Agent) => Sum (Path Agent c (inr unit)) (Path (Sum Unit Unit) (onlyOne c) (nobody c)))
+    (fun (u : Unit) => inr refl)
+    (fun (u : Unit) => elim (fun (w : Unit) => Sum (Path Agent (inr w) (inr unit)) (Path (Sum Unit Unit) (onlyOne (inr w)) (nobody (inr w)))) (inl refl) u) b
+def exitOne : Path Membership (memberSet onlyOne) (memberSet nobody) :=
+  fun (i : I) => exit onlyOne nobody (inr unit) refl refl sameElseBack i
+def p0 : Position := pair unit unit
+def hold1 : Agent -> Holding := fun (b : Agent) => either (fun (u : Unit) => inr (inr unit)) (fun (u : Unit) => inl p0) b
+def l1 : Ledger onlyOne :=
+  pack hold1 (fun (b : Agent) => elim (fun (c : Agent) => Inv (onlyOne c) (hold1 c)) (fun (u : Unit) => unit) (fun (u : Unit) => unit) b)
+def lExit : Ledger nobody := transp (fun (i : I) => LendingLedger (exitOne @ i)) i0 l1
+def lFill : PathP (fun (i : I) => LendingLedger (exitOne @ i)) l1 lExit :=
+  fun (i : I) => transp (fun (j : I) => LendingLedger (exitOne @ (i /\ j))) (~i) l1
+def cStart : Config := pack (memberSet onlyOne) (pack (Gov F0 L0) (pack L0 (pair sc0 l1)))
+def cEnd : Config := pack (memberSet nobody) (pack F0 (pack L0 (pair sc0 lExit)))
+def amendExit : Path Config cStart cEnd :=
+  fun (i : I) => pack (exitOne @ i) (pack (amendGov @ i) (pack L0 (pair sc0 (lFill @ i))))
+
+-- The ledger at each end of amendExit. The exited member inr unit holds Active p0 at i0 and Forfeited p0
+-- at i1. The agent inl unit keeps Empty.
+def lStart : Ledger onlyOne := second (payload (payload (payload (amendExit @ i0))))
+def lEnd : Ledger nobody := second (payload (payload (payload (amendExit @ i1))))
+def amendHold0 : Holding := witness lStart (inr unit)
+def amendHold1 : Holding := witness lEnd (inr unit)
+def amendOther1 : Holding := witness lEnd (inl unit)
+
+-- Law 2 (slice S8, PLAN section 8, Part 2). isSetUnit and isSetSum as in examples/orbit.lang.
+-- Sets from loops: when each loop is refl, J on q gives isSet A.
+def setFromLoops : (A : Type 0) -> ((x : A) -> (p : Path A x x) -> Path (Path A x x) p refl) -> isSet A :=
+  fun (A : Type 0) (L : (x : A) -> (p : Path A x x) -> Path (Path A x x) p refl) (x : A) (y : A) (p : Path A x y) (q : Path A x y) =>
+    J A x (fun (z : A) (r : Path A x z) => (s : Path A x z) -> Path (Path A x z) s r) (L x) y q p
+
+-- Unit is a set. normU replaces a path from unit by the path that elim gives, and J shows that the two are equal.
+def normU : (c : Unit) -> Path Unit unit c -> Path Unit unit c :=
+  fun (c : Unit) (p : Path Unit unit c) => elim (fun (d : Unit) => Path Unit unit d) refl c
+def retrU : (c : Unit) -> (p : Path Unit unit c) -> Path (Path Unit unit c) p (normU c p) :=
+  fun (c : Unit) (p : Path Unit unit c) => J Unit unit (fun (d : Unit) (r : Path Unit unit d) => Path (Path Unit unit d) r (normU d r)) refl c p
+def loopsU : (x : Unit) -> (p : Path Unit x x) -> Path (Path Unit x x) p refl :=
+  fun (x : Unit) => elim (fun (y : Unit) => (p : Path Unit y y) -> Path (Path Unit y y) p refl) (fun (p : Path Unit unit unit) => retrU unit p) x
+def isSetUnit : isSet Unit := setFromLoops Unit loopsU
+
+-- Sum A B is a set when A and B are sets. normL sends a path from inl a to inl x through its A part (either with
+-- the default a) and keeps a path to inr b. On a loop at inl a, the A part is a loop in A, and isSet A makes it refl.
+def normL : (A : Type 0) -> (B : Type 0) -> (a : A) -> (c : Sum A B) -> Path (Sum A B) (inl a) c -> Path (Sum A B) (inl a) c :=
+  fun (A : Type 0) (B : Type 0) (a : A) (c : Sum A B) => elim (fun (d : Sum A B) => Path (Sum A B) (inl a) d -> Path (Sum A B) (inl a) d)
+    (fun (x : A) (p : Path (Sum A B) (inl a) (inl x)) => fun (i : I) => inl (either (fun (y : A) => y) (fun (b : B) => a) (p @ i)))
+    (fun (b : B) (p : Path (Sum A B) (inl a) (inr b)) => p) c
+def retrL : (A : Type 0) -> (B : Type 0) -> (a : A) -> (c : Sum A B) -> (p : Path (Sum A B) (inl a) c) -> Path (Path (Sum A B) (inl a) c) p (normL A B a c p) :=
+  fun (A : Type 0) (B : Type 0) (a : A) (c : Sum A B) (p : Path (Sum A B) (inl a) c) =>
+    J (Sum A B) (inl a) (fun (d : Sum A B) (r : Path (Sum A B) (inl a) d) => Path (Path (Sum A B) (inl a) d) r (normL A B a d r)) refl c p
+def loopL : (A : Type 0) -> (B : Type 0) -> isSet A -> (a : A) -> (q : Path (Sum A B) (inl a) (inl a)) -> Path (Path (Sum A B) (inl a) (inl a)) q refl :=
+  fun (A : Type 0) (B : Type 0) (sA : isSet A) (a : A) (q : Path (Sum A B) (inl a) (inl a)) =>
+    trans (Path (Sum A B) (inl a) (inl a)) q (normL A B a (inl a) q) refl (retrL A B a (inl a) q)
+      (fun (j : I) => fun (i : I) => inl ((sA a a (fun (k : I) => either (fun (y : A) => y) (fun (b : B) => a) (q @ k)) refl @ j) @ i))
+def normR : (A : Type 0) -> (B : Type 0) -> (b : B) -> (c : Sum A B) -> Path (Sum A B) (inr b) c -> Path (Sum A B) (inr b) c :=
+  fun (A : Type 0) (B : Type 0) (b : B) (c : Sum A B) => elim (fun (d : Sum A B) => Path (Sum A B) (inr b) d -> Path (Sum A B) (inr b) d)
+    (fun (a : A) (p : Path (Sum A B) (inr b) (inl a)) => p)
+    (fun (x : B) (p : Path (Sum A B) (inr b) (inr x)) => fun (i : I) => inr (either (fun (a : A) => b) (fun (y : B) => y) (p @ i))) c
+def retrR : (A : Type 0) -> (B : Type 0) -> (b : B) -> (c : Sum A B) -> (p : Path (Sum A B) (inr b) c) -> Path (Path (Sum A B) (inr b) c) p (normR A B b c p) :=
+  fun (A : Type 0) (B : Type 0) (b : B) (c : Sum A B) (p : Path (Sum A B) (inr b) c) =>
+    J (Sum A B) (inr b) (fun (d : Sum A B) (r : Path (Sum A B) (inr b) d) => Path (Path (Sum A B) (inr b) d) r (normR A B b d r)) refl c p
+def loopR : (A : Type 0) -> (B : Type 0) -> isSet B -> (b : B) -> (q : Path (Sum A B) (inr b) (inr b)) -> Path (Path (Sum A B) (inr b) (inr b)) q refl :=
+  fun (A : Type 0) (B : Type 0) (sB : isSet B) (b : B) (q : Path (Sum A B) (inr b) (inr b)) =>
+    trans (Path (Sum A B) (inr b) (inr b)) q (normR A B b (inr b) q) refl (retrR A B b (inr b) q)
+      (fun (j : I) => fun (i : I) => inr ((sB b b (fun (k : I) => either (fun (a : A) => b) (fun (y : B) => y) (q @ k)) refl @ j) @ i))
+def loopsSum : (A : Type 0) -> (B : Type 0) -> isSet A -> isSet B -> (x : Sum A B) -> (p : Path (Sum A B) x x) -> Path (Path (Sum A B) x x) p refl :=
+  fun (A : Type 0) (B : Type 0) (sA : isSet A) (sB : isSet B) (x : Sum A B) =>
+    elim (fun (y : Sum A B) => (p : Path (Sum A B) y y) -> Path (Path (Sum A B) y y) p refl) (loopL A B sA) (loopR A B sB) x
+def isSetSum : (A : Type 0) -> (B : Type 0) -> isSet A -> isSet B -> isSet (Sum A B) :=
+  fun (A : Type 0) (B : Type 0) (sA : isSet A) (sB : isSet B) => setFromLoops (Sum A B) (loopsSum A B sA sB)
+
+-- outcomeSet: D is Choice = Sum Unit Unit, a set by isSetSum.
+def outcomeSet : isSet D := isSetSum Unit Unit isSetUnit isSetUnit
+
+-- Law 2 at the closed L0: L1 is a second factorization of F0.
+def L1 : Aggregation F0 := pack (fun (o : Orbit) => inl unit) (fun (x : Obj) => refl)
+def x0 : Obj := fun (a : Agent) => inl unit
+def law2 : (z : Orbit) -> Path D (witness L0 z) (witness L1 z) := descentUnique F0 L0 L1
+def law2At0 : D := law2 (orbitProj x0) @ i0
+def law2At1 : D := law2 (orbitProj x0) @ i1

@@ -113,6 +113,9 @@ static Value *new_value(Machine *m, ValKind kind) {
   }
   v->kind = kind;
   v->tag = CLOS_CORE;
+  v->head = 0;
+  v->head_args = NULL;
+  v->head_argc = 0;
   return v;
 }
 
@@ -516,13 +519,41 @@ static const Value *env_lookup(Machine *m, const Env *env, uint32_t index) {
   return env->value;
 }
 
+/* The O27 (b) probe: a copy of V with the head HEAD at ARGS. The copy
+   has the same fields, thus it is the same value. */
+static const Value *with_head(Machine *m, const Value *v, uint32_t head, const Value *const *args, uint32_t argc) {
+  Value *t;
+  if (v == NULL || v->kind == VAL_TRAP)
+    return v;
+  t = new_value(m, v->kind);
+  if (t == NULL)
+    return NULL;
+  *t = *v;
+  t->head = head;
+  t->head_args = args;
+  t->head_argc = argc;
+  return t;
+}
+
+/* FN has a head: the result keeps the head, with ARG after its arguments. */
+static const Value *apply_head(Machine *m, const Value *fn, const Value *arg) {
+  const Value **args = arena_alloc(m->arena, ((size_t)fn->head_argc + 1u) * sizeof *args);
+  uint32_t i;
+  if (args == NULL)
+    return oom(m);
+  for (i = 0; i < fn->head_argc; i++)
+    args[i] = fn->head_args[i];
+  args[fn->head_argc] = arg;
+  return with_head(m, closure_apply(m, fn, arg), fn->head, args, fn->head_argc + 1u);
+}
+
 const Value *def_value(Machine *m, uint32_t index) {
   DefInfo *d;
   if (index >= m->def_count)
     return internal(m, "an unknown definition");
   d = &m->defs[index];
   if (d->value == NULL)
-    d->value = eval_core(m, NULL, d->body);
+    d->value = d->origin == ORIGIN_DOMAIN ? with_head(m, eval_core(m, NULL, d->body), index + 1u, NULL, 0) : eval_core(m, NULL, d->body);
   return d->value;
 }
 
@@ -638,7 +669,7 @@ const Value *apply_value(Machine *m, const Value *fn, const Value *arg) {
     return NULL;
   switch (fn->kind) {
   case VAL_LAM:
-    return closure_apply(m, fn, arg);
+    return fn->head == 0 ? closure_apply(m, fn, arg) : apply_head(m, fn, arg);
   case VAL_TRAP:
     return fn;
   case VAL_VAR:
@@ -730,66 +761,16 @@ static const Value *reduce_either(Machine *m, const Value *const *a, uint32_t n)
   return internal(m, "an either of a value that is not a Sum");
 }
 
-static const Value *reduce_elim(Machine *m, uint32_t inst, const Value *const *a, uint32_t n);
-
-/* elim with the motive and the INST cases in A at the value Y. */
-static const Value *elim_at(Machine *m, uint32_t inst, const Value *const *a, uint32_t n, const Value *y) {
-  const Value **b = arena_alloc(m->arena, (size_t)n * sizeof *b);
-  uint32_t i;
-  if (b == NULL)
-    return oom(m);
-  for (i = 0; i + 1u < n; i++)
-    b[i] = a[i];
-  b[n - 1u] = y;
-  return reduce_elim(m, inst, b, n);
-}
-
-/* elim at the domain family constructor value X (O21, S6): its case at
-   the fields, each recursive field followed by elim at it. A path
-   constructor at R then gives the path at R, with the ends elim at the
-   boundary at i0 and i1, as fold_path does. */
-static const Value *elim_ctor(Machine *m, uint32_t inst, const Value *const *a, uint32_t n, const Value *x) {
-  const CtorInfo *ctor = &m->ctors[x->inst];
-  const FamilyInfo *fam = &m->families[ctor->family];
-  const Value *ends[2];
-  const Value *acc;
-  const Value **b;
-  uint32_t i;
-  int side;
-  if (x->inst < fam->first_ctor || x->inst - fam->first_ctor >= inst || ctor->interval_count > 1u || x->argc != fam->param_count + ctor->field_count + ctor->interval_count)
-    return internal(m, "an elim of a constructor of another family");
-  if (!enter(m))
-    return NULL;
-  acc = a[1u + x->inst - fam->first_ctor];
-  for (i = 0; i < ctor->field_count && acc != NULL; i++) {
-    const Value *field = x->args[fam->param_count + i];
-    const Value *h;
-    acc = apply_value(m, acc, field);
-    h = acc != NULL && ctor->fields[i].recursive ? elim_at(m, inst, a, n, field) : NULL;
-    acc = !ctor->fields[i].recursive ? acc : h == NULL ? NULL : apply_value(m, acc, h);
-  }
-  for (side = 0; side < 2 && ctor->interval_count == 1u && acc != NULL; side++) {
-    b = arena_alloc(m->arena, (size_t)x->argc * sizeof *b);
-    if (b == NULL) {
-      m->depth--;
-      return oom(m);
-    }
-    for (i = 0; i + 1u < x->argc; i++)
-      b[i] = x->args[i];
-    b[x->argc - 1u] = val_iend(m, side);
-    ends[side] = elim_at(m, inst, a, n, val_ctor(m, x->inst, b, x->argc));
-  }
-  if (ctor->interval_count == 1u && acc != NULL)
-    acc = path_apply(m, acc, x->args[x->argc - 1u], ends[0], ends[1]);
-  m->depth--;
-  return acc;
-}
-
 /* elim P c1 .. cn x with n = INST + 2 (USER ruling S4). On a neutral or a
-   formal hcomp at Sum, Unit or a domain family, elim stays neutral (O22). */
-static const Value *reduce_elim(Machine *m, uint32_t inst, const Value *const *a, uint32_t n) {
+   formal hcomp at Sum or Unit, elim stays neutral (O22). FIELD is 0 at Sum
+   and Unit, and the family + 1 at a domain family (S7 B1). */
+static const Value *elim_family(Machine *m, uint32_t family, const Value *const *a, uint32_t n);
+
+static const Value *reduce_elim(Machine *m, uint32_t inst, uint32_t field, const Value *const *a, uint32_t n) {
   const Value *x = a[n - 1u];
   const Value *out;
+  if (field != 0u)
+    return elim_family(m, field - 1u, a, n);
   if (blocked(m, x, OP_ELIM, inst, 0, a, n, &out))
     return out;
   if (val_is(x, OP_HCOMP))
@@ -800,9 +781,7 @@ static const Value *reduce_elim(Machine *m, uint32_t inst, const Value *const *a
     return apply_value(m, a[2], x->args[0]);
   if (inst == 1u && val_is(x, OP_UNIT_VAL))
     return a[1];
-  if (val_is(x, OP_CTOR) && x->inst < m->ctor_count)
-    return elim_ctor(m, inst, a, n, x);
-  return internal(m, "an elim of a value that is not a Sum, Unit or a domain family");
+  return internal(m, "an elim of a value that is not a Sum or Unit");
 }
 
 static const Value *reduce_option(Machine *m, const Value *const *a, uint32_t n) {
@@ -1083,6 +1062,112 @@ static const Value *fold_square(Machine *m, uint32_t family, const Value *const 
       return NULL;
   }
   return path_apply(m, path_apply(m, s, r1, outer[0], outer[1]), x->args[x->argc - 1u], inner[0], inner[1]);
+}
+
+/* A neutral elim over the domain family FAMILY (S7 B1, O22). A holds the
+   motive, the N - 2 cases and the scrutinee at A[N - 1]. */
+static const Value *stuck_elim(Machine *m, uint32_t family, const Value *const *a, uint32_t n) {
+  return val_op(m, VAL_STUCK, OP_ELIM, n - 2u, family + 1u, a, n);
+}
+
+/* The elim A[0 .. N - 1] at X in place of the scrutinee A[N - 1]. */
+static const Value *elim_at(Machine *m, uint32_t family, const Value *const *a, uint32_t n, const Value *x) {
+  const Value **b = arena_alloc(m->arena, (size_t)n * sizeof *b);
+  uint32_t i;
+  if (b == NULL)
+    return oom(m);
+  for (i = 0; i + 1u < n; i++)
+    b[i] = a[i];
+  b[n - 1u] = x;
+  return elim_family(m, family, b, n);
+}
+
+/* (case fields) @ r for the path constructor value x = A[N - 1] at r. P is
+   the case at the fields. The ends are the elims of x at i0 and i1, for a
+   neutral P (as fold_path). */
+static const Value *elim_path(Machine *m, uint32_t family, const Value *const *a, uint32_t n, const Value *p) {
+  const Value *x = a[n - 1u];
+  const Value *ends[2];
+  const Value **b;
+  uint32_t i;
+  int side;
+  for (side = 0; side < 2; side++) {
+    b = arena_alloc(m->arena, (size_t)x->argc * sizeof *b);
+    if (b == NULL)
+      return oom(m);
+    for (i = 0; i + 1u < x->argc; i++)
+      b[i] = x->args[i];
+    b[x->argc - 1u] = val_iend(m, side);
+    ends[side] = elim_at(m, family, a, n, val_ctor(m, x->inst, b, x->argc));
+  }
+  return path_apply(m, p, x->args[x->argc - 1u], ends[0], ends[1]);
+}
+
+/* (case fields) @ r1 @ r2 for the constructor value x = A[N - 1] with 2
+   interval fields. S is the case at the fields, a square. The faces are
+   as in fold_square, over a stuck elim of x (CLOS_FOLD_FACE). */
+static const Value *elim_square(Machine *m, uint32_t family, const Value *const *a, uint32_t n, const Value *s) {
+  const Value *x = a[n - 1u];
+  const Value *stuck = stuck_elim(m, family, a, n);
+  const Value *r1 = x->args[x->argc - 2u];
+  const Value *outer[2];
+  const Value *inner[2];
+  int side;
+  for (side = 0; side < 2; side++) {
+    outer[side] = kan_closure4(m, VAL_PLAM, CLOS_FOLD_FACE, family, 3u, x, val_iend(m, side), stuck, NULL);
+    inner[side] = elim_at(m, family, a, n, ctor_at2(m, x, r1, val_iend(m, side)));
+    if (outer[side] == NULL || inner[side] == NULL)
+      return NULL;
+  }
+  return path_apply(m, path_apply(m, s, r1, outer[0], outer[1]), x->args[x->argc - 1u], inner[0], inner[1]);
+}
+
+/* elim P c1 .. cn x over the domain family FAMILY (S7 B1, O21). The case
+   of the constructor of x takes each field, then for a recursive field its
+   elim, and for a path field the elim along it (CLOS_FOLD_PATH). A path
+   constructor and a squash go to elim_path and elim_square. A neutral x
+   and a formal hcomp stay neutral (O22). */
+static const Value *elim_family(Machine *m, uint32_t family, const Value *const *a, uint32_t n) {
+  const Value *x = a[n - 1u];
+  const FamilyInfo *fam;
+  const CtorInfo *ctor;
+  const FieldInfo *f;
+  const Value *acc;
+  const Value *out;
+  uint32_t p;
+  uint32_t i;
+  if (x == NULL)
+    return NULL;
+  if (blocked(m, x, OP_ELIM, n - 2u, family + 1u, a, n, &out))
+    return out;
+  if (val_is(x, OP_HCOMP))
+    return stuck_elim(m, family, a, n);
+  if (family >= m->family_count || !val_is(x, OP_CTOR) || x->inst >= m->ctor_count)
+    return internal(m, "an elim of a value that is not in the family");
+  fam = &m->families[family];
+  ctor = &m->ctors[x->inst];
+  p = fam->param_count;
+  if (ctor->family != family || x->inst < fam->first_ctor || x->inst - fam->first_ctor >= n - 2u || x->argc != p + ctor->field_count + ctor->interval_count)
+    return internal(m, "an elim of a constructor of another family");
+  if (ctor->interval_count > 2u)
+    return internal(m, "an elim of a constructor with more than 2 interval fields");
+  if (!enter(m))
+    return NULL;
+  acc = a[1u + (x->inst - fam->first_ctor)];
+  for (i = 0; i < ctor->field_count && acc != NULL; i++) {
+    f = &ctor->fields[i];
+    acc = apply_value(m, acc, x->args[p + i]);
+    if (f->recursive && acc != NULL)
+      acc = apply_value(m, acc, elim_at(m, family, a, n, x->args[p + i]));
+    if (f->path && acc != NULL)
+      acc = apply_value(m, acc, kan_closure4(m, VAL_PLAM, CLOS_FOLD_PATH, family, 4u, x->args[p + i], x->args[p + f->ends[0]], x->args[p + f->ends[1]], stuck_elim(m, family, a, n)));
+  }
+  if (ctor->interval_count == 1u && acc != NULL)
+    acc = elim_path(m, family, a, n, acc);
+  if (ctor->interval_count == 2u && acc != NULL)
+    acc = elim_square(m, family, a, n, acc);
+  m->depth--;
+  return acc;
 }
 
 /* 1 when the step result R ends the list. *TAIL is then the end. */
@@ -1755,10 +1840,15 @@ static const Value *kan_apply(Machine *m, const Value *k, const Value *r) {
   case CLOS_FOLD_PATH:
     if (a[3]->argc < 2u)
       return internal(m, "a folded path field without its cases");
+    /* A stuck elim (S7 B1) holds the motive, the cases and x. */
+    if (a[3]->op == OP_ELIM)
+      return elim_at(m, k->field, a[3]->args, a[3]->argc, path_apply(m, a[0], r, a[1], a[2]));
     return fold_family(m, k->field, a[3]->args, a[3]->argc - 2u, path_apply(m, a[0], r, a[1], a[2]));
   case CLOS_FOLD_FACE:
     if (a[2]->argc < 2u)
       return internal(m, "a folded face without its cases");
+    if (a[2]->op == OP_ELIM)
+      return elim_at(m, k->field, a[2]->args, a[2]->argc, ctor_at2(m, a[0], a[1], r));
     return fold_family(m, k->field, a[2]->args, a[2]->argc - 2u, ctor_at2(m, a[0], a[1], r));
   case CLOS_GLUE_BASE:
     t = glue_at(m, a[0], r, 0);
@@ -2652,6 +2742,23 @@ static const Value *val_isubst(Machine *m, const Value *v, uint32_t level, const
     }
     *out = *v;
     out->args = args;
+    /* The cached definition application denotes this value only after
+       the same substitution has been made in its arguments. */
+    if (v->head_argc != 0u) {
+      const Value **head_args = arena_alloc(m->arena, (size_t)v->head_argc * sizeof *head_args);
+      if (head_args == NULL) {
+        m->depth--;
+        return oom(m);
+      }
+      out->head_args = head_args;
+      for (i = 0; i < v->head_argc; i++) {
+        head_args[i] = val_isubst(m, v->head_args[i], level, s);
+        if (head_args[i] == NULL) {
+          m->depth--;
+          return NULL;
+        }
+      }
+    }
     r = out;
     for (i = 0; i < v->argc && r != NULL; i++) {
       args[i] = v->args[i] == NULL ? NULL : val_isubst(m, v->args[i], level, s);
@@ -2966,7 +3073,7 @@ static const Value *reduce_op(Machine *m, Op op, uint32_t inst, uint32_t field, 
   case OP_OPTION_ELIM:
     return reduce_option(m, a, n);
   case OP_ELIM:
-    return reduce_elim(m, inst, a, n);
+    return reduce_elim(m, inst, field, a, n);
   case OP_PURE:
     return reduce_pure(m, inst, a[0]);
   case OP_MAP:
@@ -3250,6 +3357,8 @@ static int conv_system(Machine *m, uint32_t level, const Value *a, const Value *
   return 1;
 }
 
+static int conv_head(Machine *m, uint32_t level, const Value *a, const Value *b);
+
 /* The last argument of an operation is compared in the loop, so a long
    list does not nest. */
 static int conv_loop(Machine *m, uint32_t level, const Value *a, const Value *b) {
@@ -3306,8 +3415,26 @@ static int conv_loop(Machine *m, uint32_t level, const Value *a, const Value *b)
       b = b->args[b->argc - 1u];
       break;
     }
+    /* The loop step does not go through conv_values, thus it does its two
+       fast tests here. Without them, the compare of the ledger field of a
+       Prod type compares the unfolded Glue types (lend-lang S8 Part 3). */
+    if (a != NULL && b != NULL && (a == b || conv_head(m, level, a, b)))
+      return 1;
   }
   return 0;
+}
+
+/* The O27 (b) fast path: the same kernel definition at arguments that are
+   equal gives equal values. When an argument differs, conv_values compares
+   the unfolded values. */
+static int conv_head(Machine *m, uint32_t level, const Value *a, const Value *b) {
+  uint32_t i;
+  if (a->head == 0 || a->head != b->head || a->head_argc != b->head_argc)
+    return 0;
+  for (i = 0; i < a->head_argc; i++)
+    if (!conv_values(m, level, a->head_args[i], b->head_args[i]))
+      return 0;
+  return 1;
 }
 
 int conv_values(Machine *m, uint32_t level, const Value *a, const Value *b) {
@@ -3319,7 +3446,7 @@ int conv_values(Machine *m, uint32_t level, const Value *a, const Value *b) {
      with itself: the compare of Config with itself goes under the
      Membership binder and quotes the isoToEquiv proof of the ledger, and
      that is more than the arena limit (lend-lang S7 Part 2). */
-  same = a == b || conv_loop(m, level, a, b);
+  same = a == b || conv_head(m, level, a, b) || conv_loop(m, level, a, b);
   m->depth--;
   return same;
 }
@@ -3530,11 +3657,50 @@ static const Core *quote_inner(Machine *m, uint32_t level, const Value *v) {
   return NULL;
 }
 
+static int binder_kind(const Value *v) {
+  return v != NULL && (v->kind == VAL_LAM || v->kind == VAL_PLAM || v->kind == VAL_PI || v->kind == VAL_SIGMA || v->kind == VAL_PATHP);
+}
+
+/* The O27 (b) probe: quote the head of a value with a binder part (a
+   function, a type former, or data or a neutral with a function in it).
+   First-order data keeps its normal form, thus eval output does not
+   change. */
+static int head_quote_ok(const Value *v) {
+  uint32_t i;
+  if (binder_kind(v))
+    return 1;
+  if (v->kind != VAL_OP && v->kind != VAL_STUCK)
+    return 0;
+  for (i = 0; i < v->argc; i++)
+    if (binder_kind(v->args[i]))
+      return 1;
+  return 0;
+}
+
+static const Core *quote_head(Machine *m, uint32_t level, const Value *v) {
+  Core *g = new_core(m, CORE_GLOBAL);
+  const Core *c = g;
+  uint32_t i;
+  if (g == NULL)
+    return NULL;
+  g->index = v->head - 1u;
+  for (i = 0; i < v->head_argc && c != NULL; i++) {
+    const Core *arg = quote_value(m, level, v->head_args[i]);
+    Core *app = arg == NULL ? NULL : new_core(m, CORE_APP);
+    if (app != NULL) {
+      app->a = c;
+      app->b = arg;
+    }
+    c = app;
+  }
+  return c;
+}
+
 const Core *quote_value(Machine *m, uint32_t level, const Value *v) {
   const Core *c;
   if (v == NULL || !enter(m))
     return NULL;
-  c = quote_inner(m, level, v);
+  c = v->head != 0 && head_quote_ok(v) ? quote_head(m, level, v) : quote_inner(m, level, v);
   m->depth--;
   return c;
 }

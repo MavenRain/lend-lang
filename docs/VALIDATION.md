@@ -1,12 +1,12 @@
 # Validation
 
 Date: 2026-10-18. tcc: 0.9.28rc. evm (go-ethereum): 1.14.12. Host
-executable: `build/langc` at 1d7369a plus the S7 changes.
+executable: `build/langc` at 7d6a401 plus the S8 changes.
 
 `make -B check` passes: it builds `langc` and the test tools with tcc,
 runs the clang `-Wall -Wextra -Wswitch-enum -Werror` check, and runs the
-gate scripts. It runs 34 examples, 19 parse refusals, 170 check
-refusals, 22 kit-only refusals, 88 evals, 5 runs, 10 run refusals, 8
+gate scripts. It runs 35 examples, 19 parse refusals, 181 check
+refusals, 22 kit-only refusals, 101 evals, 5 runs, 10 run refusals, 8
 asmtool checks, 3 builds, 16 lower refusals, 33 build checks, 20
 dispatch checks, 43 evm steps, 18 precompile steps, 13 mock rows, 15
 diff rows, 24 emit regressions and the review, domain, path, fuel,
@@ -183,3 +183,33 @@ now applies signature reservations before the ordinary name check.
 The C fronttool covers the ten new installed signature names in all
 three declaration positions, with controls that accept the trusted
 definitions and ordinary guest code.
+
+The S8 work ports orbit-lang B1 676c7a8 and B2 eafa1df (PLAN section 8,
+"Builder call (S8, 2026-10-18)"). Part 1 adds dependent elim for domain
+families, with the lend S6 candidate fallback in rule_elim (USER ruling
+(a)): examples/elim.lang, 5 elim-* check refusals and 8 evals. Part 2
+adds the outcomeSet and menu slots and the law 2 block (orbitEq to
+descentUnique) after IsSelfConstituting and outcomeSet: 4 check
+refusals and the dao evals law2At0 and law2At1. Part 3 adds the O27 (b)
+fast path (a def head in core.h, conv_head in conv_values and in the
+conv_loop step) and the guest term amendExit: the check refusal
+amend-end (PATH_END) and the dao evals amendHold0, amendHold1 and
+amendOther1. amendPath stays a reserved SIG_DEFINED name. Session 12
+adds the check refusal menu-early (REFUSE_SIG) and a well-typed menu in
+examples/dao.lang. Mutants m1 to m7 and p1 to p4 are killed (11 of 11,
+1 admission) (docs/STATUS.md section S8).
+
+Review fixes (2026-10-19): `rule_elim` tries every arity-compatible
+scrutinee from last to first. A constructor case of another family must
+not determine the domain of a bare motive. The C fronttool regression
+eliminates a three-constructor family into a two-constructor family and
+checks the reduction at its last constructor.
+
+Interval substitution also substitutes the cached definition arguments
+used by conversion and quotation. The C pathtool regression substitutes
+`i0` in `T (edge i)`, checks that the generic and substituted types are
+distinct, and checks that the closed quotation evaluates to `T point`.
+Pathtool includes the evaluator implementation to exercise this internal
+operation; its build target explicitly depends on `src/front/eval.c`.
+Both regressions pass on the base commit and fail on the original S8
+changes. The fixed tree passes `make -B check`, with the gate counts above.

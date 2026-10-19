@@ -11,6 +11,10 @@
 #include "front/lexer.h"
 #include "front/parser.h"
 
+/* Include the evaluator to exercise its internal interval substitution,
+   which recovers cached Glue endpoints. */
+#include "../src/front/eval.c"
+
 static const char LOT[] = "family Lot (n : Nat) := makeLot (amount : Nat)\n";
 static const char TRANSPORT[] =
   "def transport : (X : Type 0) -> (Y : Type 0) -> Path (Type 0) X Y -> X -> Y :=\n"
@@ -202,6 +206,37 @@ static int system_conversion(void) {
   return ok;
 }
 
+static int interval_substitution(void) {
+  Arena arena;
+  Machine m;
+  Diag diag;
+  const Value *fn, *generic, *endpoint;
+  const Value *arg[1];
+  const Core *quoted;
+  int ok;
+  arena_init(&arena, (size_t)128 << 20);
+  ok = checked(&arena, &m, &diag,
+    "family Circle := point | edge (i : I) [ ~i -> point, i -> point ]\n"
+    "def T : Circle -> Type 0 := fun c => Path Circle c point\n");
+  if (ok) {
+    fn = def_value(&m, m.def_count - 1u);
+    arg[0] = val_ivar(&m, 0);
+    generic = apply_value(&m, fn, val_ctor(&m, m.families[0].first_ctor + 1u, arg, 1u));
+    endpoint = val_isubst(&m, generic, 0, val_iend(&m, 0));
+    ok = generic != NULL && endpoint != NULL && !conv_values(&m, 1, generic, endpoint);
+    quoted = quote_value(&m, 0, endpoint);
+    ok = ok && quoted != NULL
+      && conv_values(&m, 0, eval_core(&m, NULL, quoted),
+                     apply_value(&m, fn, val_ctor(&m, m.families[0].first_ctor, NULL, 0)));
+  }
+  if (!ok) {
+    fprintf(stderr, "FAIL interval substitution must preserve conversion and closed quotation\n");
+    diag_print(&diag, stderr);
+  }
+  arena_release(&arena);
+  return ok;
+}
+
 int main(void) {
   int failed = 0;
   failed += !roundtrip("PathP binder capture", "",
@@ -328,6 +363,7 @@ int main(void) {
     "def p : PathP (fun (i : I) => Glue G (~i \\/ i) (fun (_ : I) => [ ~i -> pack G (idEquiv G), i -> pack G (idEquiv G) ])) u u := fun (i : I) => glue (fun (_ : I) => [ ~i -> u, i -> u ]) u\n"
     "def original : PathP (fun (i : I) => Path G (unglue (p @ i)) u) refl refl := fun (i : I) => refl\n");
   failed += !system_conversion();
+  failed += !interval_substitution();
   failed += !accepts("transport at a Glue with a stable face", EQUIV,
     "def G : Path (Type 0) (Fin 3) (Fin 3) := fun (r : I) => Glue (Fin 3) (~r \\/ r) (fun (_ : I) => [ ~r -> pack (Fin 3) (idEquiv (Fin 3)), r -> pack (Fin 3) (idEquiv (Fin 3)) ])\n"
     "def g : PathP (fun (r : I) => G @ r) 0 0 := fun (r : I) => glue (fun (_ : I) => [ ~r -> 0, r -> 0 ]) 0\n"

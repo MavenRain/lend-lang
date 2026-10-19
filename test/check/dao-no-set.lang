@@ -1,0 +1,13 @@
+-- The kernel gives descentUnique (law 2) only after the slot outcomeSet.
+-- This program has no outcomeSet, thus descentUnique is an unknown name.
+def Agent : Type 0 := Sum Unit Unit
+def Choice : Type 0 := Sum Unit Unit
+def D : Type 0 := Choice
+def G : Type 0 := Sum Unit Unit
+
+def flip : Choice -> Choice := fun (c : Choice) => either (fun (u : Unit) => inr unit) (fun (u : Unit) => inl unit) c
+
+def actChoice : G -> Choice -> Choice :=
+  fun (g : G) (c : Choice) => either (fun (u : Unit) => c) (fun (u : Unit) => flip c) g
+
+def law2 : (F : ChoiceRule Obj D) -> (L : Aggregation F) -> (K : Aggregation F) -> (z : Orbit) -> Path D (witness L z) (witness K z) := descentUnique

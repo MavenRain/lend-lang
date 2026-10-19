@@ -1,0 +1,66 @@
+-- An amend whose end keeps the exited member: the type of amendExit ends at
+-- cStart, but the body ends at cEnd, where inr unit is not a member and holds
+-- Forfeited p0. The end of the path does not agree.
+def Agent : Type 0 := Sum Unit Unit
+def Choice : Type 0 := Sum Unit Unit
+def D : Type 0 := Choice
+def G : Type 0 := Sum Unit Unit
+def Position : Type 0 := Prod Unit Unit
+
+def flip : Choice -> Choice := fun (c : Choice) => either (fun (u : Unit) => inr unit) (fun (u : Unit) => inl unit) c
+
+def actChoice : G -> Choice -> Choice :=
+  fun (g : G) (c : Choice) => either (fun (u : Unit) => c) (fun (u : Unit) => flip c) g
+
+-- F0: the constant rule. actChoice does not change it, so refl is its invariance proof.
+def F0 : ChoiceRule Obj D := fun (x : Obj) => inl unit
+def c0 : Constitution := pack F0 (fun (g : G) (x : Obj) => refl)
+
+-- L0: the constant rule on orbits. It factors F0 through orbitProj.
+def L0 : Aggregation F0 := pack (fun (o : Orbit) => inl unit) (fun (x : Obj) => refl)
+
+-- Gov F0 L0 is the rule that L0 gives, and it is F0 at each assignment (the fixed point).
+def gov0 : ChoiceRule Obj D := Gov F0 L0
+def sc0 : IsSelfConstituting F0 L0 := fun (x : Obj) => refl
+
+-- cfg0: a closed Config. The member set has no member, and each agent holds Empty, thus each Inv is Unit.
+def cfg0 : Config :=
+  pack (memberSet (fun (b : Agent) => inl unit)) (pack F0 (pack L0 (pair sc0 (pack (fun (b : Agent) => inr (inr unit)) (fun (b : Agent) => unit)))))
+
+-- The laws of the DAO at F0 and L0 (slice S7, PLAN section 8, Part 3).
+-- The amend = Gov law: the rule that Gov gives from F0 and L0 is F0. refl is the proof.
+def amendGov : Path (ChoiceRule Obj D) (Gov F0 L0) F0 := refl
+
+-- Anonymity: the first part of L0 factors through orbitProj. Each x gives a path.
+def anon0 : (x : Obj) -> Path D (witness L0 (orbitProj x)) (F0 x) := fun (x : Obj) => refl
+
+-- The gov unit: Gov with L0 gives F0 back at each x. refl is the proof.
+def govUnit : (x : Obj) -> Path D (Gov F0 L0 x) (F0 x) := fun (x : Obj) => refl
+
+-- Self-constitution as a PathP over IsFixedPointObj: the constant path at sc0.
+def scPath : PathP (fun (i : I) => IsFixedPointObj F0 L0) sc0 sc0 := fun (i : I) => sc0
+
+-- amendExit (slice S8, PLAN section 8, Part 3): the amend of the exit of the member inr unit, a Path Config.
+-- The M face is exitOne. The F face is amendGov (Gov F0 L0 is F0). L0 and sc0 do not change.
+-- The ledger face is the transport fill over LendingLedger along exitOne. nobody .. lExit as in examples/ledger.lang.
+-- The S7 kernel did not check it (arena limit, PLAN section 8, deviation 7). The O27 (b) fast path in conv
+-- (the same kernel definition at equal arguments) and the quote that keeps the head clear it.
+def nobody : Agent -> Sum Unit Unit := fun (b : Agent) => inl unit
+def onlyOne : Agent -> Sum Unit Unit := fun (b : Agent) => either (fun (u : Unit) => inl unit) (fun (u : Unit) => inr unit) b
+def sameElseBack : (b : Agent) -> Sum (Path Agent b (inr unit)) (Path (Sum Unit Unit) (onlyOne b) (nobody b)) :=
+  fun (b : Agent) => elim (fun (c : Agent) => Sum (Path Agent c (inr unit)) (Path (Sum Unit Unit) (onlyOne c) (nobody c)))
+    (fun (u : Unit) => inr refl)
+    (fun (u : Unit) => elim (fun (w : Unit) => Sum (Path Agent (inr w) (inr unit)) (Path (Sum Unit Unit) (onlyOne (inr w)) (nobody (inr w)))) (inl refl) u) b
+def exitOne : Path Membership (memberSet onlyOne) (memberSet nobody) :=
+  fun (i : I) => exit onlyOne nobody (inr unit) refl refl sameElseBack i
+def p0 : Position := pair unit unit
+def hold1 : Agent -> Holding := fun (b : Agent) => either (fun (u : Unit) => inr (inr unit)) (fun (u : Unit) => inl p0) b
+def l1 : Ledger onlyOne :=
+  pack hold1 (fun (b : Agent) => elim (fun (c : Agent) => Inv (onlyOne c) (hold1 c)) (fun (u : Unit) => unit) (fun (u : Unit) => unit) b)
+def lExit : Ledger nobody := transp (fun (i : I) => LendingLedger (exitOne @ i)) i0 l1
+def lFill : PathP (fun (i : I) => LendingLedger (exitOne @ i)) l1 lExit :=
+  fun (i : I) => transp (fun (j : I) => LendingLedger (exitOne @ (i /\ j))) (~i) l1
+def cStart : Config := pack (memberSet onlyOne) (pack (Gov F0 L0) (pack L0 (pair sc0 l1)))
+def cEnd : Config := pack (memberSet nobody) (pack F0 (pack L0 (pair sc0 lExit)))
+def amendExit : Path Config cStart cStart :=
+  fun (i : I) => pack (exitOne @ i) (pack (amendGov @ i) (pack L0 (pair sc0 (lFill @ i))))

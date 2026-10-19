@@ -226,6 +226,43 @@ static const char ledger_source[] =
    prelude and after Membership. */
 static const char *const LEDGER_AFTER[] = {"Position", "IsSelfConstituting"};
 
+/* Law 2 (S8 Part 2, PLAN section 8): two factorizations L and K of one
+   rule F through orbitProj are equal on each orbit. descentUnique is an
+   elim on Orbit into fun z => Path D (witness L z) (witness K z). The quot
+   case is descentPoint, the quotEq case is a PathP by outcomeSet, and the
+   quotSquash case is a square by outcomeSet. outcomeSet is a program slot
+   (isSet D), thus the block comes after IsSelfConstituting and
+   outcomeSet. R is ORBIT_R, as in the orbit source. */
+#define LAW2_SOURCE_NAME "kernel/law2.lang"
+
+static const char law2_source[] =
+  "def orbitEq : (a : Obj) -> (b : Obj) -> Sigma (g : G) (Path (Agent -> Choice) (fun (t : Agent) => actChoice g (b t)) a) -> Path Orbit (orbitProj a) (orbitProj b) :=\n"
+  "  fun (a : Obj) (b : Obj) (r : Sigma (g : G) (Path (Agent -> Choice) (fun (t : Agent) => actChoice g (b t)) a)) => fun (i : I) => quotEq (Agent -> Choice) " ORBIT_R " a b r i\n"
+  "def orbitSet : isSet Orbit :=\n"
+  "  fun (x : Orbit) (y : Orbit) (p : Path Orbit x y) (q : Path Orbit x y) => fun (i : I) => fun (j : I) => quotSquash (Agent -> Choice) " ORBIT_R " x y p q i j\n"
+  "def descentPoint : (F : ChoiceRule Obj D) -> (L : Aggregation F) -> (K : Aggregation F) -> (x : Obj) -> Path D (witness L (orbitProj x)) (witness K (orbitProj x)) :=\n"
+  "  fun (F : ChoiceRule Obj D) (L : Aggregation F) (K : Aggregation F) (x : Obj) =>\n"
+  "    fun (i : I) => hcomp D (~i \\/ i) (fun (k : I) => [ ~i -> witness L (orbitProj x)"
+  ", i -> sym (payload K x) @ k ]) (payload L x @ i)\n"
+  "def descentUnique : (F : ChoiceRule Obj D) -> (L : Aggregation F) -> (K : Aggregation F) -> (z : Orbit) -> Path D (witness L z) (witness K z) :=\n"
+  "  fun (F : ChoiceRule Obj D) (L : Aggregation F) (K : Aggregation F) (z : Orbit) =>\n"
+  "    elim (fun (w : Orbit) => Path D (witness L w) (witness K w))\n"
+  "      (fun (x : Obj) => descentPoint F L K x)\n"
+  "      (fun (a : Obj) (b : Obj) (r : Sigma (g : G) (Path (Agent -> Choice) (fun (t : Agent) => actChoice g (b t)) a)) => fun (i : I) =>\n"
+  "        outcomeSet (witness L (orbitEq a b r @ i)) (witness K (orbitEq a b r @ i))\n"
+  "          (transp (fun (j : I) => Path D (witness L (orbitEq a b r @ (i /\\ j))) (witness K (orbitEq a b r @ (i /\\ j)))) ~i (descentPoint F L K a))\n"
+  "          (transp (fun (j : I) => Path D (witness L (orbitEq a b r @ (i \\/ ~j))) (witness K (orbitEq a b r @ (i \\/ ~j)))) i (descentPoint F L K b)) @ i)\n"
+  "      (fun (x : Orbit) (ihx : Path D (witness L x) (witness K x)) (y : Orbit) (ihy : Path D (witness L y) (witness K y))\n"
+  "        (p : Path Orbit x y) (ihp : PathP (fun (j : I) => Path D (witness L (p @ j)) (witness K (p @ j))) ihx ihy)\n"
+  "        (q : Path Orbit x y) (ihq : PathP (fun (j : I) => Path D (witness L (q @ j)) (witness K (q @ j))) ihx ihy) =>\n"
+  "        fun (i : I) => fun (j : I) => hcomp (Path D (witness L (orbitSet x y p q @ i @ j)) (witness K (orbitSet x y p q @ i @ j))) (~i \\/ i \\/ ~j \\/ j) (fun (k : I) => [ ~i -> outcomeSet (witness L (orbitSet x y p q @ i @ j)) (witness K (orbitSet x y p q @ i @ j)) (transp (fun (k : I) => Path D (witness L (orbitSet x y p q @ (i /\\ k) @ (j /\\ k))) (witness K (orbitSet x y p q @ (i /\\ k) @ (j /\\ k)))) i0 ihx) (ihp @ j) @ k"
+  ", i -> outcomeSet (witness L (orbitSet x y p q @ i @ j)) (witness K (orbitSet x y p q @ i @ j)) (transp (fun (k : I) => Path D (witness L (orbitSet x y p q @ (i /\\ k) @ (j /\\ k))) (witness K (orbitSet x y p q @ (i /\\ k) @ (j /\\ k)))) i0 ihx) (ihq @ j) @ k"
+  ", ~j -> outcomeSet (witness L (orbitSet x y p q @ i @ j)) (witness K (orbitSet x y p q @ i @ j)) (transp (fun (k : I) => Path D (witness L (orbitSet x y p q @ (i /\\ k) @ (j /\\ k))) (witness K (orbitSet x y p q @ (i /\\ k) @ (j /\\ k)))) i0 ihx) ihx @ k"
+  ", j -> outcomeSet (witness L (orbitSet x y p q @ i @ j)) (witness K (orbitSet x y p q @ i @ j)) (transp (fun (k : I) => Path D (witness L (orbitSet x y p q @ (i /\\ k) @ (j /\\ k))) (witness K (orbitSet x y p q @ (i /\\ k) @ (j /\\ k)))) i0 ihx) ihy @ k ]) (transp (fun (k : I) => Path D (witness L (orbitSet x y p q @ (i /\\ k) @ (j /\\ k))) (witness K (orbitSet x y p q @ (i /\\ k) @ (j /\\ k)))) i0 ihx))\n"
+  "      z\n";
+
+static const char *const LAW2_AFTER[] = {"IsSelfConstituting", "outcomeSet"};
+
 /* Put the declarations of TEXT directly after the declaration AT, with the
    trusted origin ORIGIN_DOMAIN. Check order is declaration order, so a
    refused declaration at or before AT stops before them. */
@@ -278,13 +315,15 @@ static int splice_after_all(Arena *arena, size_t first, const char *const *names
 
 /* Membership directly after the program `def Agent` (USER ruling S6),
    Orbit and orbitProj directly after the program `def actChoice`, the DAO
-   prelude after the last of its slots and Orbit (S7), and the ledger after
-   Position and the DAO prelude (S7 Part 2). */
+   prelude after the last of its slots and Orbit (S7), the ledger after
+   Position and the DAO prelude (S7 Part 2), and law 2 after
+   IsSelfConstituting and outcomeSet (S8 Part 2). */
 static int splice_kernel(Arena *arena, size_t first, DeclList *out, Diag *diag) {
   return splice_after(arena, first, "Agent", MEMBERSHIP_SOURCE_NAME, membership_source, sizeof membership_source - 1u, out, diag)
       && splice_after(arena, first, "actChoice", ORBIT_SOURCE_NAME, orbit_source, sizeof orbit_source - 1u, out, diag)
       && splice_after_all(arena, first, DAO_AFTER, sizeof DAO_AFTER / sizeof DAO_AFTER[0], DAO_SOURCE_NAME, dao_source, sizeof dao_source - 1u, out, diag)
-      && splice_after_all(arena, first, LEDGER_AFTER, sizeof LEDGER_AFTER / sizeof LEDGER_AFTER[0], LEDGER_SOURCE_NAME, ledger_source, sizeof ledger_source - 1u, out, diag);
+      && splice_after_all(arena, first, LEDGER_AFTER, sizeof LEDGER_AFTER / sizeof LEDGER_AFTER[0], LEDGER_SOURCE_NAME, ledger_source, sizeof ledger_source - 1u, out, diag)
+      && splice_after_all(arena, first, LAW2_AFTER, sizeof LAW2_AFTER / sizeof LAW2_AFTER[0], LAW2_SOURCE_NAME, law2_source, sizeof law2_source - 1u, out, diag);
 }
 
 int front_load(Arena *arena, const char *source, const char *text, size_t len, DeclList *out, Diag *diag) {

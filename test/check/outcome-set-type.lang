@@ -1,0 +1,7 @@
+-- The slot outcomeSet must have the type isSet D. Here it is a type,
+-- thus the slot check refuses it.
+def Agent : Type 0 := Sum Unit Unit
+def Choice : Type 0 := Sum Unit Unit
+def D : Type 0 := Choice
+
+def outcomeSet : Type 0 := D
