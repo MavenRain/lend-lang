@@ -8,7 +8,10 @@
 # 9, then a Forfeited zkBorrow). The words are the words of the zk.lang
 # literals, read by `langc --kit eval` (the same words as the eval rows): this
 # file carries no literal. It needs evm (go-ethereum), bc, od, build/slottool
-# and build/langc. Run it from the kit root.
+# and build/langc. Run it from the kit root. Five gas rows (S10 Part 3,
+# gasRow) check the execution gas of the first zkBorrow, the last zkRangeBit,
+# zkRangeDone, zkRepay and the ok zkLiquidate against the S10 gas table of
+# docs/PLAN.md section 6, exact: an emitter change moves them on purpose.
 set -u
 fail=0
 steps=0
@@ -55,6 +58,13 @@ call() {
   callAt 1 "$caller" "$@"
 }
 
+# gasRow WANT: the execution gas of the last step (gas of step, evm
+# --statdump) must be WANT. A gas row counts as a step.
+gasRow() {
+  steps=$((steps + 1))
+  [ "${gas:-}" = "$1" ] || { echo "FAIL zk gas $_name: want $1, got ${gas:-none}"; fail=$((fail + 1)); }
+}
+
 if ! deploy "$prog"; then
   echo "FAIL zk deploy: $(head -n 1 "$tmp/dump")"
   fail=$((fail + 1))
@@ -84,6 +94,7 @@ else
   call revert zkBorrow 1u 1u $(words schnorrKA)
   # The opening: zkBorrow with cKA and the Schnorr proof, the deadline 1 + 7 = 8.
   call ok zkBorrow $(words cKA) $(words schnorrKA)
+  gasRow 100353
   # 2. range overflow: rb00Bad has e0 + 1, and the end before any bit.
   call revert zkRangeBit $(words rb00Bad)
   call revert zkRangeDone
@@ -91,15 +102,19 @@ else
   for n in $(seq 31 -1 0); do
     call ok zkRangeBit $(words "$(printf 'rb%02d' "$n")")
   done
+  gasRow 60942
   call ok zkRangeDone
+  gasRow 46800
   # The flow rows: repay clears the deadline, so no liquidation; borrow again
   # (the deadline 8), liquidate at 8 reverts and at 9 forfeits; then borrow
   # reverts (Forfeited).
   call ok zkRepay $(words cKA) $(words schnorrKA)
+  gasRow 46247
   callAt 9 "$caller" revert zkLiquidate "$caller"
   call ok zkBorrow $(words cKA) $(words schnorrKA)
   callAt 8 "$caller" revert zkLiquidate "$caller"
   callAt 9 "$caller" ok zkLiquidate "$caller"
+  gasRow 10113
   call revert zkBorrow $(words cKA) $(words schnorrKA)
 fi
 

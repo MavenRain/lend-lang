@@ -370,6 +370,30 @@ membership, whereas zkLiquidate keeps the contract's member flag. The
 delta relation, excess repayment policy and membership correspondence
 still need integration and host/EVM differential validation.
 
+S10 Part 3 adds the host and EVM differential of the zk entries, five gas
+rows and two EIP size rows. test/run/zk.script has 8 calls on
+examples/zk.lang: enroll, borrow, repay, liquidate at 9 after the repay,
+borrow, liquidate at 8 and at 9, then borrow on the Forfeited position.
+`langc run` gives test/run/zk.out, and test/diff.sh gets the same result
+at each step and the same end storage on the chain. This row covers the
+S9 entries and their 0x06 and 0x07 calls. It does not cover the
+ledger/contract integration of the paragraph above. The `step` helper of
+test/evmchain.sh runs `evm run --statdump` and sets gas to the execution
+gas of the call. test/zk.sh has five exact gas rows: the first zkBorrow
+100353, the last zkRangeBit 60942, zkRangeDone 46800, zkRepay 46247 and
+the ok zkLiquidate 10113 (PLAN section 6 has the full table). test/build.sh
+bounds the zk.lang runtime (7512 bytes) by EIP-170 (24576) and the
+initcode (7532 bytes) by EIP-3860 (49152). The counts that move: runs 5
+to 6, build checks 34 to 36, zk chain 56 to 61 steps, diff gate 15 to 16
+rows. Mutants: the grace 7 to 8; the zkBorrow Schnorr check removed; the
+zkRepay deadline kept; the zkRepay Schnorr check removed (only the gas row
+kills it); `now > deadline` to `now >= deadline` in zkLiquidate; no
+Forfeited mark; zkLiquidate writes the cx slot again with the same value
+(only the gas row kills it); ecMul lowered to the ecAdd address in
+src/lower.c; the precompile STATICCALL gas capped at 100 in src/evm.c; and
+the row-sanity pair (a gas row plus 1, the EIP-170 bound set to 7511):
+11 of 11 KILLED.
+
 Staged review (2026-10-19) reproduced and fixed three defects:
 
 - HIGH: Schnorr and bit provers reused the same deterministic nonce for

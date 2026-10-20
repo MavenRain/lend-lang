@@ -1,6 +1,8 @@
 #!/bin/sh
 # The build gate (kit slice K4a). `make check` runs it from the kit directory
 # after test/asm.sh. It needs evm (go-ethereum), bc and build/slottool.
+# S10 Part 3: two rows bound the runtime and the initcode of examples/zk.lang
+# by the EIP-170 (24576 bytes) and EIP-3860 (49152 bytes) limits.
 set -eu
 fail=0
 checks=0
@@ -124,6 +126,15 @@ case $(head -n 1 "$tmp/err") in
   "langc: IO_WRITE: -: stdout: "*) expect 'stdout write code' IO_WRITE IO_WRITE ;;
   *) expect 'stdout write code' IO_WRITE "$(head -n 1 "$tmp/err")" ;;
 esac
+
+# The EIP size bounds (S10 Part 3): the runtime of examples/zk.lang (the
+# deployed code) under the EIP-170 limit, its initcode under the EIP-3860
+# limit, in bytes (two hex digits a byte). A FAIL prints the size; an empty
+# build prints 0.
+_rt=$(build/langc --kit build examples/zk.lang --runtime | tr -d '\n' | wc -c | tr -d ' ')
+_ic=$(build/langc --kit build examples/zk.lang | tr -d '\n' | wc -c | tr -d ' ')
+expect 'zk.lang runtime bytes under EIP-170' ok "$([ "$_rt" -gt 0 ] && [ $((_rt / 2)) -le 24576 ] && echo ok || echo $((_rt / 2)))"
+expect 'zk.lang initcode bytes under EIP-3860' ok "$([ "$_ic" -gt 0 ] && [ $((_ic / 2)) -le 49152 ] && echo ok || echo $((_ic / 2)))"
 
 rm -rf "$tmp"
 echo "builds: $builds checked, lower refusals: $refused checked, checks: $checks"

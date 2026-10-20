@@ -145,11 +145,12 @@ deploy() {
 # trap (the Trap() selector), error, `revert HEX` or `out HEX`. tmp/raw and
 # tmp/got get the storage after the call. A set alloc (`,"0xADDR":{...}`)
 # adds accounts to the prestate (test/diff.sh: the mock token); then tmp/raw
-# holds the storage of all accounts.
+# holds the storage of all accounts. gas gets the execution gas of the call
+# (the `EVM gas used` line of evm --statdump), on ok and on revert.
 step() {
   _st=$(awk '{ printf "%s\"0x%s\":\"0x%s\"", (NR > 1 ? "," : ""), $1, $2 }' "$tmp/raw")
   genesis "$1" "\"0x$receiver\":{\"balance\":\"0x0\",\"code\":\"0x$(cat "$tmp/code")\",\"storage\":{$_st}}${alloc:-}"
-  evm run --prestate "$tmp/pre.json" --receiver "0x$receiver" --sender "$2" --input "$3" \
+  evm run --statdump --prestate "$tmp/pre.json" --receiver "0x$receiver" --sender "$2" --input "$3" \
     --dump >"$tmp/dump" 2>&1 || return 1
   result=$(awk '
     /^0x[0-9a-f]*$/ { o = $0 }
@@ -162,6 +163,7 @@ step() {
       else if (o == "" || o == "0x") print "ok"
       else print "out " substr(o, 3)
     }' "$tmp/dump")
+  gas=$(awk '/^EVM gas used:/ { print $4 }' "$tmp/dump")
   slots "$tmp/dump"
 }
 

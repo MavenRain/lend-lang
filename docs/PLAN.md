@@ -244,6 +244,66 @@ member set and the former member holds `Forfeited 7u`. The design names
 (REFUSE_SIG), as `PrivateLoan` did, so the guest terms carry the suffix
 L: `zkBorrowL`, `zkRepayL`, `zkLiquidateL`.
 
+S10 Part 3 (2026-10-20): the host and EVM differential of the zk
+entries, the S10 gas table and the EIP size rows. test/run/zk.script has
+8 calls: enroll, borrow, repay, liquidate at 9 after the repay, borrow
+again, liquidate at 8 and at 9, then borrow on the Forfeited position.
+`langc run` gives ok, ok, ok, revert, ok, revert, ok, revert
+(test/run/zk.out), and test/diff.sh gets the same result at each step and
+the same end storage on the chain. The chain of record is the local
+go-ethereum `evm` 1.14.12 with the test config of test/evmchain.sh: each
+fork at block 0, PUSH0 on, the genesis gas limit 30,000,000. A
+public-chain probe (the code at 0x06 and 0x07, the EIP-170 limit of that
+chain) needs the network, so it is a USER step or a later part.
+
+| Item | Bytes | Limit | Used |
+|---|---|---|---|
+| initcode (`langc --kit build examples/zk.lang`) | 7532 | EIP-3860 49152 | 15.3 % |
+| runtime (`--runtime`, the deployed code) | 7512 | EIP-170 24576 | 30.6 % |
+
+The constructor is the 20-byte difference (10 ops, 1,548 gas).
+test/build.sh bounds both sizes by their limits.
+
+The gas is the `EVM gas used` line of `evm run --statdump`: execution gas
+only, with no 21,000 intrinsic gas and no calldata gas. The step numbers
+count the calls of test/zk.sh (the gas rows are not counted). The five
+rows marked "row" are exact gas rows in test/zk.sh (`gasRow`).
+
+| Step | Call | Result | Gas |
+|---|---|---|---|
+| deploy | create, 7512 bytes deposited | ok | 1,503,948 (derived) |
+| 8 | zkEnroll, first | ok | 44,558 |
+| 9 | zkBorrow, wrong opening | revert | 24,557 |
+| 10 | zkBorrow, non-member | revert | 2,553 |
+| 11 | zkDepart | ok | 10,379 |
+| 12 | zkBorrow, Forfeited | revert | 2,553 |
+| 13 | zkEnroll, again | ok | 27,458 |
+| 14 | zkBorrow, point not on the curve | revert | 29,531,553 |
+| 15 | zkBorrow, first (row) | ok | 100,353 |
+| 16 | zkRangeBit overflow | revert | 7,793 |
+| 17 | zkRangeDone early | revert | 6,938 |
+| 18 | zkRangeBit rb31, first | ok | 112,242 |
+| 19-49 | zkRangeBit rb30 to rb00 (row on rb00) | ok | 60,942 each |
+| 50 | zkRangeDone (row) | ok | 46,800 |
+| 51 | zkRepay (row) | ok | 46,247 |
+| 52 | zkLiquidate at 9, no deadline | revert | 6,923 |
+| 53 | zkBorrow, second | ok | 60,553 |
+| 54 | zkLiquidate at 8 | revert | 7,135 |
+| 55 | zkLiquidate at 9 (row) | ok | 10,113 |
+| 56 | zkBorrow, Forfeited | revert | 4,732 |
+
+The 32-bit range chain is 112,242 + 31 x 60,942 + 46,800 = 2,048,244
+gas, so a first private borrow with its range proof is 2,148,597
+execution gas over 34 transactions. The deploy gas is derived: on the
+create path, `evm run --statdump` prints the gas limit minus the gas used
+(28,496,052 at 30,000,000), so the deploy gas is 1,503,948 = 7512 x 200
+(the code deposit) + 1,548 (the constructor). Step 14 is a known cost,
+with no row and no lowering change in Part 3. The 0x07 STATICCALL
+forwards all gas (src/evm.c), and a failing precompile uses all the gas
+that it gets. Thus a caller who submits a point that is not on the curve
+pays 29,531,553 = 63/64 x 30,000,000 + 303. A cap on the gas to 0x06 and
+0x07 is a lowering change for a later part.
+
 zkEquiv needs no cryptographic assumption, so transport along `Loan`
 computes. The holder keeps a representative opening. The contract sees
 only the public face.
@@ -307,7 +367,7 @@ for each build), the counts in docs/STATUS.md, and a USER commit.
 | S7 | DAO prelude: Obj, act, ChoiceRule, Aggregation, Gov, IsFixedPointObj, Config, amendPath; LendingLedger over Membership by ua: DONE 2026-10-18, without amendPath (O27) | a non-invariant constitution, a wrong unit, an exit that does not forfeit, the ∃ of IsSelfConstituting as a Prop |
 | S8 | port orbit-lang B1 676c7a8 (dependent elim for domain families) and B2 eafa1df (outcomeSet and menu slots, lend names, separate splice); O27 option (b) probe, then amendPath if it clears; law 2 uniqueness (USER ruling S8): DONE 2026-10-18, the guest term is amendExit (amendPath stays reserved) | the orbit-lang B1 rows (elim-*); the B2 rows with lend names (outcome-set-type, menu-type, dao-no-set, dao-redefine); amendPath rows if O27 (b) clears |
 | S9 | ZK ledger: Pedersen on BN254 in C, Sigma-protocol verifier lowering, zkEquiv, PrivateLoan, borrow, repay, liquidate (moved from S8, USER ruling S8) | known-answer vectors; mutants: wrong opening, range overflow, non-member step, step on a Forfeited position, point not on the curve |
-| S10 | contract end to end: deploy, vote, amend, borrow, repay, liquidate; host and EVM differential; gas table; chain probe | differential rows, revert rows, EIP-170 and EIP-3860 size limits; Part 1 Loan and zkPrivateLoan DONE 2026-10-20; Part 2 pure ledger borrow, repay, liquidate DONE 2026-10-20; ledger/contract integration pending |
+| S10 | contract end to end: deploy, vote, amend, borrow, repay, liquidate; host and EVM differential; gas table; chain probe | differential rows, revert rows, EIP-170 and EIP-3860 size limits; Part 1 Loan and zkPrivateLoan DONE 2026-10-20; Part 2 pure ledger borrow, repay, liquidate DONE 2026-10-20; Part 3 differential, gas table, EIP rows DONE 2026-10-20; ledger/contract integration pending |
 | S11 | regimes (optional, O23), docs, final gate | regime rows |
 
 Builder call (S2, 2026-10-17): the port of orbit-lang 7734007. Identity

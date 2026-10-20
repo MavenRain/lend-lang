@@ -9,7 +9,9 @@
 # the token. The row checks the result, the storage of the contract (the
 # state of `langc run` on ok, the old storage on revert), the storage of the
 # mock and the logs. Part 2 runs the 5 call scripts of test/evm.sh with mode
-# 0 (C-K4d-8), test/run/basic.script on examples/contract.lang. Each step
+# 0 (C-K4d-8), test/run/basic.script on examples/contract.lang, and
+# test/run/zk.script on examples/zk.lang (S10 Part 3: the zk entries and
+# their 0x06 and 0x07 calls). Each step
 # must give the result of `langc run`. At the end, the contract storage must
 # equal the state of `langc run` and the mock balances must equal the sums of
 # the pay and pull rows of `langc run`, mod 2^256 (bc, C-K4d-9). It needs evm
@@ -195,6 +197,7 @@ script examples/map.lang test/run/map.script
 script examples/residuals.lang test/run/residuals.script
 script examples/events.lang test/run/events.script
 script examples/lists.lang test/run/lists.script
+script examples/zk.lang test/run/zk.script
 
 rm -rf "$tmp"
 echo "diff gate: $rows rows, $fail failures"
