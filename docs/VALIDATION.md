@@ -394,6 +394,51 @@ src/lower.c; the precompile STATICCALL gas capped at 100 in src/evm.c; and
 the row-sanity pair (a gas row plus 1, the EIP-170 bound set to 7511):
 11 of 11 KILLED.
 
+S10 Part 4 closes the gap that the paragraph before the Part 3 paragraph
+records. zkBorrow and zkRepay compute the new commitment from the public
+delta (zkShift), and zkEnroll reverts on a Forfeited position with an
+open deadline. Six eval rows: zkBorrowLink 1, zkRepayLink 1,
+zkRepayExcessLink 0, zkRepayExcessWrap 1, zkLiquidateLink 0 and
+zkEnrollForfeited 0. repayUnranges, repayResetsBits and repayResetsAcc
+keep their values on the delta arguments 5u 5u. test/zk.sh drops the
+wrong-opening and off-curve zkBorrow rows and adds six rows from bb:
+enroll, borrow 5u 13u, borrow 7u 13u, repay 5u 13u, an excess repay 20u
+13u (ok: the position wraps mod q) and the revert of a third-party
+zkEnroll of the Forfeited aa. test/run/zk.script has 25 calls, and
+test/diff.sh gets the same result at each step and the same end storage
+on the chain. The gas rows take the new zkBorrow first (107220) and
+zkRepay (45467) numbers. zkRangeBit 60942, zkRangeDone 46800 and
+zkLiquidate 10113 do not move. The runtime is 7502 bytes (EIP-170 24576)
+and the initcode 7522 bytes (EIP-3860 49152). The counts that move:
+evals 150 to 166, zk chain 61 to 78 steps. The original Part 4 build's
+mutation run, before the review fixes below, tested: the commitWords
+operand swap in zkBorrow; zkShift without the old commitment; the
+zkBorrow deadline kept; one more status slot write in zkBorrow (only the
+gas row kills it); `u256Sub zkOrder r` to `r` and `u256Sub zkOrder d` to
+`d` in zkRepay; the zkRepay deadline kept; the zkEnroll guard removed;
+the guard deadline test always true; zkLiquidate keeps status 1; and
+ecMul lowered to the ecAdd address in src/lower.c: 11 of 11 KILLED. A
+public delta makes the position public, so these rows do not validate
+the S9 hiding for a loan that uses them (docs/PLAN.md, S10 Part 4).
+
+Staged review (2026-10-20) reproduced and fixed two defects in Part 4:
+
+- HIGH: zkRepay cleared the deadline on a zero or partial repayment.
+  Starting from commit (7, 11) with deadline 8, repaying (0, 0) or
+  (5, 5) left debt but set deadline 0, so liquidation at 9 reverted.
+  zkRepayDeadline now clears it only when both resulting commitment
+  coordinates are zero; every other result keeps the original deadline.
+  The call script also checks liquidation after excess repayment and
+  refusal to reenroll the liquidated holder.
+- MEDIUM: zkRepay used saturating `u256Sub q x` to negate unrestricted
+  U256 scalars. For x = q + 1 it subtracted zero instead of the inverse
+  of G or H. zkNegScalar now reduces modulo q before subtracting.
+  Independent large-delta and large-blinding eval rows, boundary round
+  trips at q - 1, q and the maximum U256 word, and the host/EVM q + 1
+  round trip check both scalars. Ten new eval rows and 13 new call rows
+  cover these fixes; the five initial regression probes fail on the
+  original staged code and pass after the fixes.
+
 Staged review (2026-10-19) reproduced and fixed three defects:
 
 - HIGH: Schnorr and bit provers reused the same deterministic nonce for

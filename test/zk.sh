@@ -2,7 +2,7 @@
 # The zk chain gate (slice S9, Part 4). Deploy examples/zk.lang, then do one
 # `evm run --prestate` step for each row: the known-answer views (the commitment
 # words, the Schnorr and the bit verifiers with the proof words as parameters,
-# so the curve ops stay open and lower to the 0x06/0x07 precompiles), the five
+# so the curve ops stay open and lower to the 0x06/0x07 precompiles), the
 # reverts of PLAN section 8, the range chain (32 zkRangeBit steps, rb31 first,
 # then zkRangeDone) and the flow rows (zkRepay, zkLiquidate at timestamps 8 and
 # 9, then a Forfeited zkBorrow). The words are the words of the zk.lang
@@ -12,6 +12,11 @@
 # gasRow) check the execution gas of the first zkBorrow, the last zkRangeBit,
 # zkRangeDone, zkRepay and the ok zkLiquidate against the S10 gas table of
 # docs/PLAN.md section 6, exact: an emitter change moves them on purpose.
+# S10 Part 4: zkBorrow and zkRepay take the public delta d and the blinding r
+# (two words: no proof and no point), so the wrong-opening and off-curve rows
+# leave. The delta rows of bb (two borrows, a partial repay and an excess
+# repay) and the third-party enroll of the Forfeited aa (a revert) close the
+# block.
 set -u
 fail=0
 steps=0
@@ -82,19 +87,18 @@ else
   call "out 0" zkBitView $(words c0) $(words bitProof1)
   # The reverts of PLAN section 8. The caller aa enrolls (ungoverned in S9).
   call ok zkEnroll "$caller"
-  # 1. wrong opening: schnorrKABad has s1 + 1.
-  call revert zkBorrow $(words cKA) $(words schnorrKABad)
+  # 1. (a wrong opening) and 5. (a point off the curve) leave in S10 Part 4:
+  # zkBorrow takes the delta words only.
   # 3. non-member: bb never enrolled.
-  callAt 1 "$other" revert zkBorrow $(words cKA) $(words schnorrKA)
+  callAt 1 "$other" revert zkBorrow 7u 11u
   # 4. Forfeited: depart, then borrow reverts; enroll again to continue.
   call ok zkDepart "$caller"
-  call revert zkBorrow $(words cKA) $(words schnorrKA)
+  call revert zkBorrow 7u 11u
   call ok zkEnroll "$caller"
-  # 5. a point not on the curve: (1, 1), the 0x07 STATICCALL fails (R18).
-  call revert zkBorrow 1u 1u $(words schnorrKA)
-  # The opening: zkBorrow with cKA and the Schnorr proof, the deadline 1 + 7 = 8.
-  call ok zkBorrow $(words cKA) $(words schnorrKA)
-  gasRow 100353
+  # The first borrow: zkBorrow 7u 11u from the identity stores cKA, the deadline
+  # 1 + 7 = 8.
+  call ok zkBorrow 7u 11u
+  gasRow 107220
   # 2. range overflow: rb00Bad has e0 + 1, and the end before any bit.
   call revert zkRangeBit $(words rb00Bad)
   call revert zkRangeDone
@@ -105,17 +109,48 @@ else
   gasRow 60942
   call ok zkRangeDone
   gasRow 46800
-  # The flow rows: repay clears the deadline, so no liquidation; borrow again
+  # The flow rows: the full repay (7u 11u, back to the identity) clears the
+  # deadline, so no liquidation; borrow again
   # (the deadline 8), liquidate at 8 reverts and at 9 forfeits; then borrow
   # reverts (Forfeited).
-  call ok zkRepay $(words cKA) $(words schnorrKA)
-  gasRow 46247
+  call ok zkRepay 7u 11u
+  gasRow 45467
   callAt 9 "$caller" revert zkLiquidate "$caller"
-  call ok zkBorrow $(words cKA) $(words schnorrKA)
+  call ok zkBorrow 7u 11u
   callAt 8 "$caller" revert zkLiquidate "$caller"
   callAt 9 "$caller" ok zkLiquidate "$caller"
   gasRow 10113
-  call revert zkBorrow $(words cKA) $(words schnorrKA)
+  call revert zkBorrow 7u 11u
+  # S10 Part 4, the delta rows: bb enrolls, borrows 5u 13u from the identity and
+  # 7u 13u on top, repays 5u 13u, then repays 20u 13u, more than the 7u it owes:
+  # accepted, the position wraps mod q (docs/PLAN.md, S10 Part 4). Last, bb
+  # cannot enroll the Forfeited aa again: its deadline 8 is open.
+  callAt 1 "$other" ok zkEnroll "$other"
+  callAt 1 "$other" ok zkBorrow 5u 13u
+  callAt 1 "$other" ok zkBorrow 7u 13u
+  callAt 1 "$other" ok zkRepay 5u 13u
+  callAt 1 "$other" ok zkRepay 20u 13u
+  callAt 1 "$other" revert zkEnroll "$caller"
+  # Zero, partial and excess repayments keep the original deadline. A
+  # liquidated holder cannot reenroll through either caller.
+  callAt 9 "$other" ok zkLiquidate "$other"
+  call revert zkEnroll "$other"
+  third=0x00000000000000000000000000000000000000cc
+  callAt 1 "$third" ok zkEnroll "$third"
+  callAt 1 "$third" ok zkBorrow 7u 11u
+  callAt 1 "$third" ok zkRepay 0u 0u
+  callAt 1 "$third" ok zkRepay 5u 5u
+  callAt 8 "$third" revert zkLiquidate "$third"
+  callAt 9 "$third" ok zkLiquidate "$third"
+  callAt 1 "$third" revert zkEnroll "$third"
+  # ecMul reduces U256 scalars modulo q. Repayment must do the same before
+  # negation, including both public arguments above q.
+  fourth=0x00000000000000000000000000000000000000dd
+  aboveq=21888242871839275222246405745257275088548364400416034343698204186575808495618u
+  callAt 1 "$fourth" ok zkEnroll "$fourth"
+  callAt 1 "$fourth" ok zkBorrow "$aboveq" "$aboveq"
+  callAt 1 "$fourth" ok zkRepay "$aboveq" "$aboveq"
+  callAt 9 "$fourth" revert zkLiquidate "$fourth"
 fi
 
 rm -rf "$tmp"

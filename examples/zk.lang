@@ -91,34 +91,59 @@ def zkGrace : Nat := 7
 def zkPosActive : (env : Env) -> (s : State) -> (a : Addr) -> Flag :=
   fun (env : Env) (s : State) (a : Addr) => zkAnd (mapGet (members s) a) (natEq (mapGet (status s) a) 1)
 
--- Entry: the admit of a (admitOne): a is a member with an Active position.
+-- The BN254 group order q. Reduce before subtracting: u256Sub saturates above q,
+-- while ecMul accepts all U256 scalars and reduces them modulo q.
+def zkOrder : U256 := 21888242871839275222246405745257275088548364400416034343698204186575808495617u
+
+def zkNegScalar : U256 -> U256 :=
+  fun (x : U256) => u256Sub zkOrder (u256AddMod x 0u zkOrder)
+
+-- Only cancellation to the identity clears the deadline. Partial and zero repays
+-- keep it, including a nonzero commitment whose range proof is being rebuilt.
+def zkRepayDeadline : (c : Prod U256 U256) -> Nat -> Nat :=
+  fun (c : Prod U256 U256) (previous : Nat) =>
+    flagIf (zkAnd (u256Eq (first c) 0u) (u256Eq (second c) 0u)) 0 previous
+
+-- The commitment of a moved by the public delta d with the blinding r: c(a) (+) commitWords (pair d r).
+def zkShift : (s : State) -> (a : Addr) -> (d : U256) -> (r : U256) -> Prod U256 U256 :=
+  fun (s : State) (a : Addr) (d : U256) (r : U256) => ecAdd (pair (mapGet (cx s) a) (mapGet (cy s) a)) (commitWords (pair d r))
+
+-- Entry: the admit of a (admitOne): a is a member with an Active position. It reverts when a is Forfeited
+-- with an open loan (status 2 and deadline >= 1, a liquidated position): the ledger cannot readmit a
+-- Forfeited holder. After zkDepart with no open loan (deadline 0), a can enroll again.
 def zkEnroll : (env : Env) -> (s : State) -> (a : Addr) -> Option (Prod State (List Out)) :=
   fun (env : Env) (s : State) (a : Addr) =>
-    some (pair (makeState (mapSet (members s) a flagYes) (mapSet (status s) a 1) (cx s) (cy s) (deadline s) (accx s) (accy s) (bits s) (ranged s)) nil)
+    flagIf (zkAnd (natEq (mapGet (status s) a) 2) (natLe 1 (mapGet (deadline s) a)))
+      none
+      (some (pair (makeState (mapSet (members s) a flagYes) (mapSet (status s) a 1) (cx s) (cy s) (deadline s) (accx s) (accy s) (bits s) (ranged s)) nil))
 
 -- Entry: the exit of a (exitOne) forfeits its position.
 def zkDepart : (env : Env) -> (s : State) -> (a : Addr) -> Option (Prod State (List Out)) :=
   fun (env : Env) (s : State) (a : Addr) =>
     some (pair (makeState (mapSet (members s) a flagNo) (mapSet (status s) a 2) (cx s) (cy s) (deadline s) (accx s) (accy s) (bits s) (ranged s)) nil)
 
--- Entry: the caller is a member and Active and the Schnorr proof opens (x, y): store the commitment,
--- the deadline is now + zkGrace. Else revert.
-def zkBorrow : (env : Env) -> (s : State) -> (x : U256) -> (y : U256) -> (ax : U256) -> (ay : U256) -> (s1 : U256) -> (s2 : U256) -> Option (Prod State (List Out)) :=
-  fun (env : Env) (s : State) (x : U256) (y : U256) (ax : U256) (ay : U256) (s1 : U256) (s2 : U256) =>
+-- Entry: the caller is a member and Active: the commitment moves by the public delta d with the blinding r
+-- to c (+) commitWords (pair d r) (zkShift, the zkBorrowL step of the ledger), and the deadline is
+-- now + zkGrace. From the identity (0, 0), zkBorrow 7u 11u stores cKA. Else revert.
+def zkBorrow : (env : Env) -> (s : State) -> (d : U256) -> (r : U256) -> Option (Prod State (List Out)) :=
+  fun (env : Env) (s : State) (d : U256) (r : U256) =>
     flagIf (zkPosActive env s (caller env))
-      (flagIf (schnorrVerify (pair x y) (pair (pair ax ay) (pair s1 s2)))
-        (some (pair (makeState (members s) (status s) (mapSet (cx s) (caller env) x) (mapSet (cy s) (caller env) y) (mapSet (deadline s) (caller env) (natAdd (now env) zkGrace)) (mapSet (accx s) (caller env) 0u) (mapSet (accy s) (caller env) 0u) (mapSet (bits s) (caller env) 0) (mapSet (ranged s) (caller env) flagNo)) nil))
-        none)
+      (some (pair (makeState (members s) (status s) (mapSet (cx s) (caller env) (first (zkShift s (caller env) d r))) (mapSet (cy s) (caller env) (second (zkShift s (caller env) d r))) (mapSet (deadline s) (caller env) (natAdd (now env) zkGrace)) (mapSet (accx s) (caller env) 0u) (mapSet (accy s) (caller env) 0u) (mapSet (bits s) (caller env) 0) (mapSet (ranged s) (caller env) flagNo)) nil))
       none
 
--- Entry: the same test with the new commitment, the deadline cleared. The replaced commitment's range
--- attestation and any partial range proof are cleared, just as in zkBorrow.
-def zkRepay : (env : Env) -> (s : State) -> (x : U256) -> (y : U256) -> (ax : U256) -> (ay : U256) -> (s1 : U256) -> (s2 : U256) -> Option (Prod State (List Out)) :=
-  fun (env : Env) (s : State) (x : U256) (y : U256) (ax : U256) (ay : U256) (s1 : U256) (s2 : U256) =>
+-- Entry: the same test; the commitment moves back by d to c (-) commitWords (pair d r), computed as
+-- c (+) commitWords (pair (zkNegScalar d) (zkNegScalar r)) (the zkRepayL step).
+-- Only a result at the identity clears the deadline; every other result keeps it.
+-- A repay above the debt wraps mod q where the ledger saturates at 0u: the payer loses the excess, and no
+-- 32-bit range chain opens the result. The replaced commitment's range attestation and any partial range
+-- proof are cleared, just as in zkBorrow.
+def zkRepay : (env : Env) -> (s : State) -> (d : U256) -> (r : U256) -> Option (Prod State (List Out)) :=
+  fun (env : Env) (s : State) (d : U256) (r : U256) =>
     flagIf (zkPosActive env s (caller env))
-      (flagIf (schnorrVerify (pair x y) (pair (pair ax ay) (pair s1 s2)))
-        (some (pair (makeState (members s) (status s) (mapSet (cx s) (caller env) x) (mapSet (cy s) (caller env) y) (mapSet (deadline s) (caller env) 0) (mapSet (accx s) (caller env) 0u) (mapSet (accy s) (caller env) 0u) (mapSet (bits s) (caller env) 0) (mapSet (ranged s) (caller env) flagNo)) nil))
-        none)
+      (some (pair
+        ((fun (c : Prod U256 U256) => makeState (members s) (status s) (mapSet (cx s) (caller env) (first c)) (mapSet (cy s) (caller env) (second c)) (mapSet (deadline s) (caller env) (zkRepayDeadline c (mapGet (deadline s) (caller env)))) (mapSet (accx s) (caller env) 0u) (mapSet (accy s) (caller env) 0u) (mapSet (bits s) (caller env) 0) (mapSet (ranged s) (caller env) flagNo))
+          (zkShift s (caller env) (zkNegScalar d) (zkNegScalar r)))
+        nil))
       none
 
 -- Entry: a is a member and Active with a deadline, and now is past the deadline (O17): Forfeited. Else revert.
@@ -175,14 +200,14 @@ def bitChallenge1 : Flag := bitVerify c0 (pair (first bitProof0) (pair (pair (fi
 def bitScalar0 : Flag := bitVerify c0 (pair (first bitProof0) (pair (first (second bitProof0)) (pair (u256Add (first (second (second bitProof0))) r) (second (second (second bitProof0))))))
 def bitScalar1 : Flag := bitVerify c0 (pair (first bitProof0) (pair (first (second bitProof0)) (pair (first (second (second bitProof0))) (u256Add (second (second (second bitProof0))) r))))
 
--- A completed range proof of cKA, followed by repayment to a 33-bit commitment.
+-- A completed range proof of cKA, followed by a partial repay (5u, 5u).
 def reviewAddr : Addr := 0x00000000000000000000000000000000000000aa
 def reviewEnv : Env := makeEnv 1 reviewAddr
 def reviewRangedState : State := makeState (mapSet mapEmpty reviewAddr flagYes) (mapSet mapEmpty reviewAddr 1) (mapSet mapEmpty reviewAddr (first cKA)) (mapSet mapEmpty reviewAddr (second cKA)) (mapSet mapEmpty reviewAddr 8) mapEmpty mapEmpty mapEmpty (mapSet mapEmpty reviewAddr flagYes)
-def repayUnranges : Flag := option flagYes (fun (p : Prod State (List Out)) => mapGet (ranged (first p)) reviewAddr) (zkRepay reviewEnv reviewRangedState (first longCommit) (second longCommit) (first (first longOpen)) (second (first longOpen)) (first (second longOpen)) (second (second longOpen)))
--- One accepted bit of cKA, followed by repayment during the stream.
+def repayUnranges : Flag := option flagYes (fun (p : Prod State (List Out)) => mapGet (ranged (first p)) reviewAddr) (zkRepay reviewEnv reviewRangedState 5u 5u)
+-- One accepted bit of cKA, followed by a partial repay (5u, 5u) during the stream.
 def reviewPartialState : State := makeState (mapSet mapEmpty reviewAddr flagYes) (mapSet mapEmpty reviewAddr 1) (mapSet mapEmpty reviewAddr (first cKA)) (mapSet mapEmpty reviewAddr (second cKA)) (mapSet mapEmpty reviewAddr 8) (mapSet mapEmpty reviewAddr (first (first rb31))) (mapSet mapEmpty reviewAddr (second (first rb31))) (mapSet mapEmpty reviewAddr 1) mapEmpty
-def reviewPartialRepay : Option (Prod State (List Out)) := zkRepay reviewEnv reviewPartialState (first longCommit) (second longCommit) (first (first longOpen)) (second (first longOpen)) (first (second longOpen)) (second (second longOpen))
+def reviewPartialRepay : Option (Prod State (List Out)) := zkRepay reviewEnv reviewPartialState 5u 5u
 def repayResetsBits : Nat := option 99 (fun (p : Prod State (List Out)) => mapGet (bits (first p)) reviewAddr) reviewPartialRepay
 def repayResetsAcc : Flag := option flagNo (fun (p : Prod State (List Out)) => zkAnd (u256Eq (mapGet (accx (first p)) reviewAddr) 0u) (u256Eq (mapGet (accy (first p)) reviewAddr) 0u)) reviewPartialRepay
 
@@ -382,3 +407,34 @@ def zkLiquidateKA : Holding := witness (zkLiquidateL l7) (inr unit)
 def zkLiquidateOtherKA : Holding := witness (zkLiquidateL l7) (inl unit)
 def zkRepayForfeitedKA : Holding := witness (zkRepayL nobody 5u (zkLiquidateL l7)) (inr unit)
 def zkBorrowRepayKA : Holding := witness (zkRepayL onlyOne 5u (zkBorrowL onlyOne 5u l7)) (inr unit)
+
+-- S10 Part 4, the link rows: each runs a chain entry on the review state that holds cKA and compares the
+-- stored (cx, cy) with commitWords of the ledger value. 12u is zkBorrowKA, 2u is zkRepayKA and 0u is
+-- zkRepayUnderKA: the ledger saturates at 0u, the chain wraps mod zkOrder (zkRepayExcessWrap).
+def zkLinkAt : (o : Option (Prod State (List Out))) -> (w : Prod U256 U256) -> Flag :=
+  fun (o : Option (Prod State (List Out))) (w : Prod U256 U256) => option flagNo (fun (p : Prod State (List Out)) => zkAnd (u256Eq (mapGet (cx (first p)) reviewAddr) (first w)) (u256Eq (mapGet (cy (first p)) reviewAddr) (second w))) o
+def zkBorrowLink : Flag := zkLinkAt (zkBorrow reviewEnv reviewRangedState 5u 13u) (commitWords (pair 12u 24u))
+def zkRepayLink : Flag := zkLinkAt (zkRepay reviewEnv reviewRangedState 5u 5u) (commitWords (pair 2u 6u))
+def zkRepayExcessLink : Flag := zkLinkAt (zkRepay reviewEnv reviewRangedState 9u 5u) (commitWords (pair 0u 6u))
+def zkRepayExcessWrap : Flag := zkLinkAt (zkRepay reviewEnv reviewRangedState 9u 5u) (commitWords (pair (u256Sub zkOrder 2u) 6u))
+-- The membership map: zkPosActive (a member with status 1) is the ledger member set. After zkLiquidate at 9
+-- the former member is outside it (zkLiquidateKA is inr (inl 7u)), and zkEnroll cannot bring it back.
+def reviewLateEnv : Env := makeEnv 9 reviewAddr
+def reviewForfeited : Option (Prod State (List Out)) := zkLiquidate reviewLateEnv reviewRangedState reviewAddr
+def zkLiquidateLink : Flag := option flagYes (fun (p : Prod State (List Out)) => zkPosActive reviewLateEnv (first p) reviewAddr) reviewForfeited
+def zkEnrollForfeited : Nat := option 99 (fun (p : Prod State (List Out)) => option 0 (fun (e : Prod State (List Out)) => 1) (zkEnroll reviewEnv (first p) reviewAddr)) reviewForfeited
+
+-- Review regressions: a nonzero commitment keeps its original liquidation deadline.
+def repayZeroDeadline : Nat := option 99 (fun (p : Prod State (List Out)) => mapGet (deadline (first p)) reviewAddr) (zkRepay reviewEnv reviewRangedState 0u 0u)
+def repayPartialDeadline : Nat := option 99 (fun (p : Prod State (List Out)) => mapGet (deadline (first p)) reviewAddr) reviewPartialRepay
+def repayPartialLiquidates : Nat := option 99 (fun (p : Prod State (List Out)) => option 0 (fun (l : Prod State (List Out)) => 1) (zkLiquidate reviewLateEnv (first p) reviewAddr)) reviewPartialRepay
+-- Scalars above q must subtract the same group element that borrow adds.
+def repayLargeDelta : Flag := zkLinkAt (zkRepay reviewEnv reviewRangedState (u256Add zkOrder 1u) 5u) (commitWords (pair 6u 6u))
+def repayLargeBlind : Flag := zkLinkAt (zkRepay reviewEnv reviewRangedState 5u (u256Add zkOrder 1u)) (commitWords (pair 2u 10u))
+def repayFullDeadline : Nat := option 99 (fun (p : Prod State (List Out)) => mapGet (deadline (first p)) reviewAddr) (zkRepay reviewEnv reviewRangedState 7u 11u)
+def repayExcessDeadline : Nat := option 99 (fun (p : Prod State (List Out)) => mapGet (deadline (first p)) reviewAddr) (zkRepay reviewEnv reviewRangedState 9u 5u)
+def repayScalarRoundTrip : U256 -> U256 -> Flag :=
+  fun (d : U256) (r : U256) => option flagNo (fun (p : Prod State (List Out)) => zkLinkAt (zkRepay reviewEnv (first p) d r) cKA) (zkBorrow reviewEnv reviewRangedState d r)
+def repayBelowOrder : Flag := repayScalarRoundTrip (u256Sub zkOrder 1u) (u256Sub zkOrder 1u)
+def repayAtOrder : Flag := repayScalarRoundTrip zkOrder zkOrder
+def repayMaxScalar : Flag := repayScalarRoundTrip 115792089237316195423570985008687907853269984665640564039457584007913129639935u 115792089237316195423570985008687907853269984665640564039457584007913129639935u

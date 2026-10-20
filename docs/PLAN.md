@@ -234,7 +234,7 @@ does not go below 0" law of the repay row (the eval row
 of a submitted replacement commitment; they do not check its relation
 to the previous commitment or a position delta. Connecting these ledger
 transformations to the contract, including the commitment update and
-the treatment of excess repayment, remains pending. Saturation alone
+the treatment of excess repayment, remains pending (Part 4: below). Saturation alone
 does not establish `c' = c ⊖ commit (δ, r)` for δ above the debt.
 `zkLiquidateL` is the transport along `exitOne`, the exit
 path of the member in LendingLedger (`Ledger onlyOne -> Ledger nobody`):
@@ -304,6 +304,104 @@ that it gets. Thus a caller who submits a point that is not on the curve
 pays 29,531,553 = 63/64 x 30,000,000 + 303. A cap on the gas to 0x06 and
 0x07 is a lowering change for a later part.
 
+S10 Part 4 (2026-10-20): the ledger/contract integration. zkBorrow and
+zkRepay take the public delta d and a blinding r (two U256 words) and
+compute the new commitment on the chain. `zkShift s a d r` is
+c(a) ⊕ commitWords (d, r): the two ecMul of commitWords and one ecAdd.
+zkBorrow stores c ⊕ commit (d, r), the `zkBorrowL` step. zkRepay stores
+c ⊕ commit (q - (d mod q), q - (r mod q)) = c ⊖ commit (d, r), the
+`zkRepayL` step, with q = `zkOrder`, the BN254 group order.
+`zkNegScalar` reduces each U256 word with `u256AddMod` before subtraction:
+`u256Sub q x` alone saturates at zero for x > q and cannot negate that
+scalar. At d = r = 0 the shift point is
+q G + q H, the identity (0, 0), so no zero case is necessary. The
+Schnorr opening proof leaves both entries. The caller submits no point,
+so the wrong-opening row and the off-curve row of Part 3 (steps 9 and
+14) leave test/zk.sh. zkRangeBit and zkSchnorrView still take points, so
+the gas cap on 0x06 and 0x07 stays an item for a later part.
+
+The cost is privacy. δ is public, so a watcher who adds the deltas
+knows the position: a loan that uses these entries loses the S9 hiding
+of the position value. Only a hidden δ with a range chain for each δ
+keeps it (a later design). The excess law: a repay above the debt wraps
+mod q on the chain, where the ledger saturates at `Active 0u`
+(`zkRepayUnderKA`). The payer loses the excess e, the stored point is a
+commitment to q - e, and no 32-bit range chain opens it, so the position
+stays unranged. The link rows of test/eval/expect.txt connect the two
+levels on the review state that holds cKA = commit (7, 11):
+`zkBorrowLink` (borrow 5u 13u gives commit (12, 24), and 12u is
+`zkBorrowKA`), `zkRepayLink` (repay 5u 5u gives commit (2, 6), and 2u
+is `zkRepayKA`), `zkRepayExcessLink` 0 and `zkRepayExcessWrap` 1 (repay
+9u 5u gives commit (q - 2, 6), not the commit (0, 6) of the saturated
+ledger). Repayment clears the deadline only when both commitment coordinates
+become zero, the identity. Zero, partial and excess repayments with a nonzero
+result keep the existing deadline and remain liquidatable after it. A
+full cancellation must also cancel the accumulated blinding; a residual
+blinding keeps the deadline. The membership map: `zkPosActive` (a member with status 1) is
+the ledger member set. zkLiquidate sets status 2 and keeps the member
+flag, and `zkLiquidateLink` (0) shows that the liquidated address leaves
+that set, as `zkLiquidateL` goes from `onlyOne` to `nobody`. The zkEnroll
+guard closes the readmit path: zkEnroll reverts when status a = 2 and
+deadline a >= 1 (a liquidated position). The prelude has no negation, so
+the guard is `flagIf (zkAnd (natEq (mapGet (status s) a) 2) (natLe 1
+(mapGet (deadline s) a))) none (some ...)`. zkDepart preserves the deadline;
+enroll after depart stays ok only when that deadline was already 0.
+`zkEnrollForfeited` (0) and the
+third-party zkEnroll row of test/zk.sh show the revert.
+
+test/run/zk.script has 25 calls: the 8 calls of Part 3 on the delta
+arguments 7u 11u, then bb enrolls the Forfeited aa (revert), and bb
+enrolls, borrows 5u 13u and repays 20u 13u (ok, the wrap). The next
+13 calls check liquidation after excess, zero and partial repayment,
+reenrollment refusals, and a borrow/repay round trip with both scalars q + 1
+that returns to the identity and clears its deadline. test/zk.sh
+adds six rows from bb: enroll, borrow 5u 13u, borrow 7u 13u, repay 5u
+13u, the excess repay 20u 13u and the third-party zkEnroll of aa
+(revert), then the same 13 regression calls. Ten further eval rows check
+the repayment deadlines, partial liquidation, independent d and r above q,
+and round trips at q - 1, q and the maximum U256 word.
+The zk chain has 78 steps (73 calls and 5 gas rows). The S10
+gas table after Part 4 (the same rules as the Part 3 table):
+
+| Item | Bytes | Limit | Used |
+|---|---|---|---|
+| initcode (`langc --kit build examples/zk.lang`) | 7522 | EIP-3860 49152 | 15.3 % |
+| runtime (`--runtime`, the deployed code) | 7502 | EIP-170 24576 | 30.5 % |
+
+| Step | Call | Result | Gas |
+|---|---|---|---|
+| deploy | create, 7502 bytes deposited | ok | 1,501,948 (derived) |
+| 8 | zkEnroll, first | ok | 44,684 |
+| 9 | zkBorrow, non-member | revert | 2,493 |
+| 10 | zkDepart | ok | 10,379 |
+| 11 | zkBorrow, Forfeited | revert | 2,493 |
+| 12 | zkEnroll, again | ok | 29,769 |
+| 13 | zkBorrow 7u 11u, first (row) | ok | 107,220 |
+| 14 | zkRangeBit overflow | revert | 7,793 |
+| 15 | zkRangeDone early | revert | 6,938 |
+| 16 | zkRangeBit rb31, first | ok | 112,242 |
+| 17-47 | zkRangeBit rb30 to rb00 (row on rb00) | ok | 60,942 each |
+| 48 | zkRangeDone (row) | ok | 46,800 |
+| 49 | zkRepay 7u 11u, full (row) | ok | 45,467 |
+| 50 | zkLiquidate at 9, no deadline | revert | 6,923 |
+| 51 | zkBorrow 7u 11u, second | ok | 107,220 |
+| 52 | zkLiquidate at 8 | revert | 7,135 |
+| 53 | zkLiquidate at 9 (row) | ok | 10,113 |
+| 54 | zkBorrow, Forfeited | revert | 4,672 |
+| 55 | zkEnroll bb | ok | 44,684 |
+| 56 | zkBorrow 5u 13u, bb first | ok | 107,220 |
+| 57 | zkBorrow 7u 13u, bb second | ok | 53,120 |
+| 58 | zkRepay 5u 13u, partial | ok | 39,892 |
+| 59 | zkRepay 20u 13u, excess (wraps) | ok | 39,892 |
+| 60 | zkEnroll aa by bb, Forfeited | revert | 4,595 |
+
+The table covers the original 60 calls; the 13 regression calls follow them.
+The full repay at step 49 returns the commitment to the identity, so it
+clears the cx and cy slots, and the second borrow (step 51) pays the
+same slot writes as the first. A first borrow with its range
+proof is now 107,220 + 2,048,244 = 2,155,464 execution gas over 34
+transactions. The deploy gas is 7502 x 200 + 1,548 = 1,501,948.
+
 zkEquiv needs no cryptographic assumption, so transport along `Loan`
 computes. The holder keeps a representative opening. The contract sees
 only the public face.
@@ -367,7 +465,7 @@ for each build), the counts in docs/STATUS.md, and a USER commit.
 | S7 | DAO prelude: Obj, act, ChoiceRule, Aggregation, Gov, IsFixedPointObj, Config, amendPath; LendingLedger over Membership by ua: DONE 2026-10-18, without amendPath (O27) | a non-invariant constitution, a wrong unit, an exit that does not forfeit, the ∃ of IsSelfConstituting as a Prop |
 | S8 | port orbit-lang B1 676c7a8 (dependent elim for domain families) and B2 eafa1df (outcomeSet and menu slots, lend names, separate splice); O27 option (b) probe, then amendPath if it clears; law 2 uniqueness (USER ruling S8): DONE 2026-10-18, the guest term is amendExit (amendPath stays reserved) | the orbit-lang B1 rows (elim-*); the B2 rows with lend names (outcome-set-type, menu-type, dao-no-set, dao-redefine); amendPath rows if O27 (b) clears |
 | S9 | ZK ledger: Pedersen on BN254 in C, Sigma-protocol verifier lowering, zkEquiv, PrivateLoan, borrow, repay, liquidate (moved from S8, USER ruling S8) | known-answer vectors; mutants: wrong opening, range overflow, non-member step, step on a Forfeited position, point not on the curve |
-| S10 | contract end to end: deploy, vote, amend, borrow, repay, liquidate; host and EVM differential; gas table; chain probe | differential rows, revert rows, EIP-170 and EIP-3860 size limits; Part 1 Loan and zkPrivateLoan DONE 2026-10-20; Part 2 pure ledger borrow, repay, liquidate DONE 2026-10-20; Part 3 differential, gas table, EIP rows DONE 2026-10-20; ledger/contract integration pending |
+| S10 | contract end to end: deploy, vote, amend, borrow, repay, liquidate; host and EVM differential; gas table; chain probe | differential rows, revert rows, EIP-170 and EIP-3860 size limits; Part 1 Loan and zkPrivateLoan DONE 2026-10-20; Part 2 pure ledger borrow, repay, liquidate DONE 2026-10-20; Part 3 differential, gas table, EIP rows DONE 2026-10-20; Part 4 ledger/contract integration DONE 2026-10-20 |
 | S11 | regimes (optional, O23), docs, final gate | regime rows |
 
 Builder call (S2, 2026-10-17): the port of orbit-lang 7734007. Identity
