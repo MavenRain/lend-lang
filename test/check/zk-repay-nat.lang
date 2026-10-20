@@ -1,0 +1,35 @@
+-- The wrong amount (S10 Part 2). Position is U256 in examples/zk.lang, so the delta of zkRepayL is a U256
+-- word: the Nat literal 5 of badAmount is refused (expected U256, found Nat). The helpers are the Part 2
+-- definitions of examples/zk.lang. The slots are the slots of examples/zk.lang. A kit row: U256 is a kit
+-- item (test/check/kit.txt).
+def Agent : Type 0 := Sum Unit Unit
+def Choice : Type 0 := Sum Unit Unit
+def D : Type 0 := Choice
+def G : Type 0 := Sum Unit Unit
+def Position : Type 0 := U256
+def posWord : Position -> U256 := fun (p : Position) => p
+
+def flip : Choice -> Choice := fun (c : Choice) => either (fun (u : Unit) => inr unit) (fun (u : Unit) => inl unit) c
+def actChoice : G -> Choice -> Choice :=
+  fun (g : G) (c : Choice) => either (fun (u : Unit) => c) (fun (u : Unit) => flip c) g
+
+def stepHolding : (f : Position -> Position) -> Holding -> Holding :=
+  fun (f : Position -> Position) (h : Holding) => either (fun (p : Position) => inl (f p)) (fun (r : Sum Position Unit) => inr r) h
+def stepInv : (f : Position -> Position) -> (b : Sum Unit Unit) -> (h : Holding) -> Inv b h -> Inv b (stepHolding f h) :=
+  fun (f : Position -> Position) (b : Sum Unit Unit) (h : Holding) =>
+    elim (fun (k : Holding) => Inv b k -> Inv b (stepHolding f k))
+      (fun (p : Position) => fun (e : Inv b (inl p)) => e)
+      (fun (r : Sum Position Unit) => fun (e : Inv b (inr r)) => e) h
+def stepOne : (f : Position -> Position) -> (m : Agent -> Sum Unit Unit) -> Ledger m -> Ledger m :=
+  fun (f : Position -> Position) (m : Agent -> Sum Unit Unit) (l : Ledger m) =>
+    pack (fun (b : Agent) => either (fun (u : Unit) => witness l (inl u)) (fun (u : Unit) => stepHolding f (witness l (inr u))) b)
+      (fun (b : Agent) => elim (fun (c : Agent) => Inv (m c) (either (fun (u : Unit) => witness l (inl u)) (fun (u : Unit) => stepHolding f (witness l (inr u))) c))
+        (fun (u : Unit) => payload l (inl u))
+        (fun (u : Unit) => stepInv f (m (inr u)) (witness l (inr u)) (payload l (inr u))) b)
+def zkRepayL : (m : Agent -> Sum Unit Unit) -> U256 -> Ledger m -> Ledger m := fun (m : Agent -> Sum Unit Unit) (d : U256) => stepOne (fun (p : Position) => u256Sub p d) m
+def onlyOne : Agent -> Sum Unit Unit := fun (b : Agent) => either (fun (u : Unit) => inl unit) (fun (u : Unit) => inr unit) b
+-- The closed ledger: the member inr unit holds Active 7u, the agent inl unit holds Empty.
+def hold7 : Agent -> Holding := fun (b : Agent) => either (fun (u : Unit) => inr (inr unit)) (fun (u : Unit) => inl 7u) b
+def l7 : Ledger onlyOne :=
+  pack hold7 (fun (b : Agent) => elim (fun (c : Agent) => Inv (onlyOne c) (hold7 c)) (fun (u : Unit) => unit) (fun (u : Unit) => unit) b)
+def badAmount : Holding := witness (zkRepayL onlyOne 5 l7) (inr unit)

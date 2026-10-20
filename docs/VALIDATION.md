@@ -329,6 +329,47 @@ eval rows and 189 check refusals. Mutants: the key flipped to
 zkLoanPath @ i, the binder swapped to PublicFace and the branch
 equivalence swapped to idEquiv PublicFace: 3 of 3 KILLED.
 
+S10 Part 2 adds the ledger-level steps zkBorrowL, zkRepayL and
+zkLiquidateL to examples/zk.lang. The design names borrow, repay and
+liquidate stay kernel-given signature names (REFUSE_SIG), and zkBorrow,
+zkRepay and zkLiquidate are the S9 EVM entries, so the ledger terms
+carry the suffix L. zkBorrowL m d and zkRepayL m d are stepOne over the
+S7 kernel Ledger m: the member's Active p becomes Active (u256Add p d)
+or Active (u256Sub p d), every other holding keeps its value, and the
+Inv field moves by the elim on the holding (stepInv). zkLiquidateL is
+the transport along exitOne, the exit path of the member, from Ledger
+onlyOne to Ledger nobody; nobody, onlyOne, sameElseBack and exitOne are
+copies of the examples/ledger.lang definitions (each example is
+standalone). The closed ledger l7 holds Active 7u at the member inr unit
+and Empty at inl unit. Eight eval rows: zkBorrowKA inl 12u,
+zkBorrowOtherKA inr (inr unit), zkRepayKA inl 2u, zkRepayUnderKA inl
+0u, zkLiquidateKA inr (inl 7u), zkLiquidateOtherKA inr (inr unit),
+zkRepayForfeitedKA inr (inl 7u) (a repay on a Forfeited holding changes
+nothing) and zkBorrowRepayKA inl 7u; the transport along exitOne lands
+in a constructor, with no hcomp layer. zkRepayUnderKA is the saturation
+reading of the repay law: u256Sub saturates at 0u, so a repay of 9u on
+Active 7u lands at Active 0u and the debt does not go below 0 (PLAN
+section 6). Four check rows (zk-repay-name.lang REFUSE_SIG,
+zk-liquidate-name.lang REFUSE_SIG, zk-liquidate-member.lang
+TYPE_MISMATCH: a member cannot hold Forfeited, zk-repay-nat.lang
+TYPE_MISMATCH: a Nat delta against the U256 position) bring the gate to
+150 eval rows and 193 check refusals. Mutants: the borrow and repay
+amount flips, the repay operand swap, the stepOne slot swap, the hold7
+slot swap and amount flip, the stepHolding Forfeited branch, the key
+flip on exitOne and the path swap to admitOne: 9 of 9 KILLED.
+
+These eight eval rows validate pure ledger transformations at the fixed
+agent inr unit. They do not validate a correspondence with the S9 contract
+entries. zkBorrow and zkRepay accept replacement commitments after an
+opening proof, without enforcing a delta from the previous commitment.
+For example, the existing repayUnranges regression accepts a replacement
+of the commitment to 7 with longCommit (2^32 + 7), and returns 0 because
+the accepted repayment clears the range attestation. Thus the entry does
+not establish the ledger-level subtraction law. Also, zkLiquidateL exits
+membership, whereas zkLiquidate keeps the contract's member flag. The
+delta relation, excess repayment policy and membership correspondence
+still need integration and host/EVM differential validation.
+
 Staged review (2026-10-19) reproduced and fixed three defects:
 
 - HIGH: Schnorr and bit provers reused the same deterministic nonce for

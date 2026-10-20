@@ -221,6 +221,29 @@ component is `commit' x`. The guest name is `zkPrivateLoan`: `PrivateLoan`
 stays a kernel-given signature name (REFUSE_SIG), as `zkEquiv` became
 `zkFaceEquiv`.
 
+S10 Part 2 (2026-10-20): the ledger-level reading of the borrow, repay
+and liquidate rows of the table below. δ is the position delta.
+`zkBorrowL m δ` and `zkRepayL m δ` step the S7 kernel Ledger at the
+member: the holding `Active p` becomes `Active (u256Add p δ)` or
+`Active (u256Sub p δ)`, every other holding keeps its value, and the Inv
+field moves by the elim on the holding (`stepOne`). `u256Sub` saturates,
+so a repay above the position lands at `Active 0u`: that is the "debt
+does not go below 0" law of the repay row (the eval row
+`zkRepayUnderKA`). These are pure transformations at the fixed agent
+`inr unit`. The S9 EVM entries `zkBorrow` and `zkRepay` verify an opening
+of a submitted replacement commitment; they do not check its relation
+to the previous commitment or a position delta. Connecting these ledger
+transformations to the contract, including the commitment update and
+the treatment of excess repayment, remains pending. Saturation alone
+does not establish `c' = c ⊖ commit (δ, r)` for δ above the debt.
+`zkLiquidateL` is the transport along `exitOne`, the exit
+path of the member in LendingLedger (`Ledger onlyOne -> Ledger nobody`):
+a member cannot hold Forfeited, so the ledger-level liquidate leaves the
+member set and the former member holds `Forfeited 7u`. The design names
+`borrow`, `repay` and `liquidate` stay kernel-given signature names
+(REFUSE_SIG), as `PrivateLoan` did, so the guest terms carry the suffix
+L: `zkBorrowL`, `zkRepayL`, `zkLiquidateL`.
+
 zkEquiv needs no cryptographic assumption, so transport along `Loan`
 computes. The holder keeps a representative opening. The contract sees
 only the public face.
@@ -284,7 +307,7 @@ for each build), the counts in docs/STATUS.md, and a USER commit.
 | S7 | DAO prelude: Obj, act, ChoiceRule, Aggregation, Gov, IsFixedPointObj, Config, amendPath; LendingLedger over Membership by ua: DONE 2026-10-18, without amendPath (O27) | a non-invariant constitution, a wrong unit, an exit that does not forfeit, the ∃ of IsSelfConstituting as a Prop |
 | S8 | port orbit-lang B1 676c7a8 (dependent elim for domain families) and B2 eafa1df (outcomeSet and menu slots, lend names, separate splice); O27 option (b) probe, then amendPath if it clears; law 2 uniqueness (USER ruling S8): DONE 2026-10-18, the guest term is amendExit (amendPath stays reserved) | the orbit-lang B1 rows (elim-*); the B2 rows with lend names (outcome-set-type, menu-type, dao-no-set, dao-redefine); amendPath rows if O27 (b) clears |
 | S9 | ZK ledger: Pedersen on BN254 in C, Sigma-protocol verifier lowering, zkEquiv, PrivateLoan, borrow, repay, liquidate (moved from S8, USER ruling S8) | known-answer vectors; mutants: wrong opening, range overflow, non-member step, step on a Forfeited position, point not on the curve |
-| S10 | contract end to end: deploy, vote, amend, borrow, repay, liquidate; host and EVM differential; gas table; chain probe | differential rows, revert rows, EIP-170 and EIP-3860 size limits; Part 1 Loan and zkPrivateLoan DONE 2026-10-20 |
+| S10 | contract end to end: deploy, vote, amend, borrow, repay, liquidate; host and EVM differential; gas table; chain probe | differential rows, revert rows, EIP-170 and EIP-3860 size limits; Part 1 Loan and zkPrivateLoan DONE 2026-10-20; Part 2 pure ledger borrow, repay, liquidate DONE 2026-10-20; ledger/contract integration pending |
 | S11 | regimes (optional, O23), docs, final gate | regime rows |
 
 Builder call (S2, 2026-10-17): the port of orbit-lang 7734007. Identity

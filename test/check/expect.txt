@@ -187,3 +187,7 @@ zk-backward-point.lang TYPE_MISMATCH
 zk-private-loan-name.lang REFUSE_SIG
 zk-loan-unglue.lang UNGLUE_TYPE
 zk-private-loan-point.lang PATH_END
+zk-repay-name.lang REFUSE_SIG
+zk-liquidate-name.lang REFUSE_SIG
+zk-liquidate-member.lang TYPE_MISMATCH
+zk-repay-nat.lang TYPE_MISMATCH

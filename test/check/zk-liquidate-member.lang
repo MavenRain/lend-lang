@@ -1,0 +1,18 @@
+-- The wrong ledger state (S10 Part 2). A member (onlyOne b = inr unit) cannot hold Forfeited: the kernel Inv
+-- at a member and a Forfeited holding is the empty path Path (Sum Unit Unit) (inr unit) (inl unit), so the
+-- invariant field unit of badLiq is refused. The ledger-level liquidate of examples/zk.lang (zkLiquidateL)
+-- is the transport along exitOne, which leaves the member set. The slots are the slots of examples/zk.lang.
+-- A kit row: U256 is a kit item (test/check/kit.txt).
+def Agent : Type 0 := Sum Unit Unit
+def Choice : Type 0 := Sum Unit Unit
+def D : Type 0 := Choice
+def G : Type 0 := Sum Unit Unit
+def Position : Type 0 := U256
+def posWord : Position -> U256 := fun (p : Position) => p
+
+def flip : Choice -> Choice := fun (c : Choice) => either (fun (u : Unit) => inr unit) (fun (u : Unit) => inl unit) c
+def actChoice : G -> Choice -> Choice :=
+  fun (g : G) (c : Choice) => either (fun (u : Unit) => c) (fun (u : Unit) => flip c) g
+
+def onlyOne : Agent -> Sum Unit Unit := fun (b : Agent) => either (fun (u : Unit) => inl unit) (fun (u : Unit) => inr unit) b
+def badLiq : Ledger onlyOne := pack (fun (b : Agent) => either (fun (u : Unit) => inr (inr unit)) (fun (u : Unit) => inr (inl 7u)) b) (fun (b : Agent) => elim (fun (c : Agent) => Inv (onlyOne c) (either (fun (u : Unit) => inr (inr unit)) (fun (u : Unit) => inr (inl 7u)) c)) (fun (u : Unit) => unit) (fun (u : Unit) => unit) b)

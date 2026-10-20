@@ -96,3 +96,5 @@ zk-backward-point.lang
 zk-private-loan-name.lang
 zk-loan-unglue.lang
 zk-private-loan-point.lang
+zk-liquidate-member.lang
+zk-repay-nat.lang

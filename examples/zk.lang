@@ -339,3 +339,46 @@ def zkLoanBackKA : PrivateFace := transp (fun (j : I) => Loan @ j) i0 zkForwardK
 -- to commit openKA, so refl fits. The pack is its own def: a term has no type ascription in this syntax.
 def zkPrivateLoanPt : zkPrivateLoan (commit openKA) := pack (quot Opening R openKA) refl
 def zkPrivateLoanKA : PrivateFace := witness zkPrivateLoanPt
+
+-- S10 Part 2 (PLAN 240-242). borrow and repay are steps on the S7 ledger: the member's Active p becomes
+-- Active (f p), every other holding keeps its value, and the Inv field moves by the elim on the holding.
+-- liquidate is the transport along the exit path of the member (the exit case of LendingLedger): a member
+-- cannot hold Forfeited, so the ledger-level liquidate leaves the member set. The design names borrow,
+-- repay and liquidate are signature names the kernel keeps (REFUSE_SIG); zkBorrow, zkRepay and
+-- zkLiquidate are the S9 EVM entries, so the ledger terms carry the suffix L.
+def stepHolding : (f : Position -> Position) -> Holding -> Holding :=
+  fun (f : Position -> Position) (h : Holding) => either (fun (p : Position) => inl (f p)) (fun (r : Sum Position Unit) => inr r) h
+def stepInv : (f : Position -> Position) -> (b : Sum Unit Unit) -> (h : Holding) -> Inv b h -> Inv b (stepHolding f h) :=
+  fun (f : Position -> Position) (b : Sum Unit Unit) (h : Holding) =>
+    elim (fun (k : Holding) => Inv b k -> Inv b (stepHolding f k))
+      (fun (p : Position) => fun (e : Inv b (inl p)) => e)
+      (fun (r : Sum Position Unit) => fun (e : Inv b (inr r)) => e) h
+def stepOne : (f : Position -> Position) -> (m : Agent -> Sum Unit Unit) -> Ledger m -> Ledger m :=
+  fun (f : Position -> Position) (m : Agent -> Sum Unit Unit) (l : Ledger m) =>
+    pack (fun (b : Agent) => either (fun (u : Unit) => witness l (inl u)) (fun (u : Unit) => stepHolding f (witness l (inr u))) b)
+      (fun (b : Agent) => elim (fun (c : Agent) => Inv (m c) (either (fun (u : Unit) => witness l (inl u)) (fun (u : Unit) => stepHolding f (witness l (inr u))) c))
+        (fun (u : Unit) => payload l (inl u))
+        (fun (u : Unit) => stepInv f (m (inr u)) (witness l (inr u)) (payload l (inr u))) b)
+def zkBorrowL : (m : Agent -> Sum Unit Unit) -> U256 -> Ledger m -> Ledger m := fun (m : Agent -> Sum Unit Unit) (d : U256) => stepOne (fun (p : Position) => u256Add p d) m
+def zkRepayL : (m : Agent -> Sum Unit Unit) -> U256 -> Ledger m -> Ledger m := fun (m : Agent -> Sum Unit Unit) (d : U256) => stepOne (fun (p : Position) => u256Sub p d) m
+def nobody : Agent -> Sum Unit Unit := fun (b : Agent) => inl unit
+def onlyOne : Agent -> Sum Unit Unit := fun (b : Agent) => either (fun (u : Unit) => inl unit) (fun (u : Unit) => inr unit) b
+def sameElseBack : (b : Agent) -> Sum (Path Agent b (inr unit)) (Path (Sum Unit Unit) (onlyOne b) (nobody b)) :=
+  fun (b : Agent) => elim (fun (c : Agent) => Sum (Path Agent c (inr unit)) (Path (Sum Unit Unit) (onlyOne c) (nobody c)))
+    (fun (u : Unit) => inr refl)
+    (fun (u : Unit) => elim (fun (w : Unit) => Sum (Path Agent (inr w) (inr unit)) (Path (Sum Unit Unit) (onlyOne (inr w)) (nobody (inr w)))) (inl refl) u) b
+def exitOne : Path Membership (memberSet onlyOne) (memberSet nobody) :=
+  fun (i : I) => exit onlyOne nobody (inr unit) refl refl sameElseBack i
+def zkLiquidateL : Ledger onlyOne -> Ledger nobody := fun (l : Ledger onlyOne) => transp (fun (i : I) => LendingLedger (exitOne @ i)) i0 l
+-- The closed ledger: the member inr unit holds Active 7u, the agent inl unit holds Empty.
+def hold7 : Agent -> Holding := fun (b : Agent) => either (fun (u : Unit) => inr (inr unit)) (fun (u : Unit) => inl 7u) b
+def l7 : Ledger onlyOne :=
+  pack hold7 (fun (b : Agent) => elim (fun (c : Agent) => Inv (onlyOne c) (hold7 c)) (fun (u : Unit) => unit) (fun (u : Unit) => unit) b)
+def zkBorrowKA : Holding := witness (zkBorrowL onlyOne 5u l7) (inr unit)
+def zkBorrowOtherKA : Holding := witness (zkBorrowL onlyOne 5u l7) (inl unit)
+def zkRepayKA : Holding := witness (zkRepayL onlyOne 5u l7) (inr unit)
+def zkRepayUnderKA : Holding := witness (zkRepayL onlyOne 9u l7) (inr unit)
+def zkLiquidateKA : Holding := witness (zkLiquidateL l7) (inr unit)
+def zkLiquidateOtherKA : Holding := witness (zkLiquidateL l7) (inl unit)
+def zkRepayForfeitedKA : Holding := witness (zkRepayL nobody 5u (zkLiquidateL l7)) (inr unit)
+def zkBorrowRepayKA : Holding := witness (zkRepayL onlyOne 5u (zkBorrowL onlyOne 5u l7)) (inr unit)

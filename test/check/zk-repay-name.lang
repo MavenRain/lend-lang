@@ -1,0 +1,4 @@
+-- The design name repay (S10 Part 2). repay is a defined design-signature name (PLAN section 3), so a guest
+-- definition of it is refused: only the kernel gives it (the borrow wall of test/check/sig-def-step.lang
+-- again). The ledger-level guest term of examples/zk.lang is zkRepayL. A plain row: no kit item.
+def repay : Unit -> Unit := fun (u : Unit) => u
