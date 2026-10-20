@@ -1,0 +1,9 @@
+-- forward's point case with a witness of another opening (S9 Part 5). The
+-- fiber zkFiber (commit o) holds an opening o' with a path from commit o'
+-- to commit o; pair 0u 0u with refl is a witness of commit (pair 0u 0u),
+-- not of commit o. A kit row: U256 is a kit item, so posWord exists in kit
+-- mode only (test/check/kit.txt).
+def Position : Type 0 := U256
+def posWord : Position -> U256 := fun (p : Position) => p
+
+def forwardPoint : Opening -> PublicFace := fun (o : Opening) => pack (commit o) (trunc1 (zkFiber (commit o)) (pack (pair 0u 0u) refl))

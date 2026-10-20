@@ -1,0 +1,18 @@
+-- backAt's point case with another point (S9 Part 5). Sg c asks for a path
+-- from commit' (quot Opening R (pair 0u 0u)), that is commit (pair 0u 0u),
+-- to c; payload z is a path from commit (witness z) to c. isSetCommitment
+-- and commit' are the examples/zk.lang definitions. A kit row: U256 is a
+-- kit item, so posWord exists in kit mode only (test/check/kit.txt).
+def Position : Type 0 := U256
+def posWord : Position -> U256 := fun (p : Position) => p
+
+def isSetCommitment : isSet Commitment :=
+  fun (x : Commitment) (y : Commitment) (p : Path Commitment x y) (q : Path Commitment x y) =>
+    fun (i : I) => fun (j : I) => squash0 (Prod U256 U256) x y p q i j
+def commit' : PrivateFace -> Commitment := fun (z : PrivateFace) => fold
+  (fun (o : Opening) => commit o)
+  (fun (a : Opening) (b : Opening) (r : R a b) => fun (i : I) => r @ i)
+  (fun (x : Commitment) (y : Commitment) (p : Path Commitment x y) (q : Path Commitment x y) => fun (i : I) => fun (j : I) => isSetCommitment x y p q @ i @ j)
+  z
+def backPoint : (c : Commitment) -> zkFiber c -> Sigma (z : PrivateFace) (Path Commitment (commit' z) c) :=
+  fun (c : Commitment) (z : zkFiber c) => pack (quot Opening R (pair 0u 0u)) (payload z)

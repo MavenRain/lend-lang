@@ -679,6 +679,7 @@ at the top of conv_values (eval.c:3313): the same def index on both
 sides, then conv the arguments, with a fallback to the unfold. Pass:
 r12, a1, lFill, a2h and dh do not reach the arena limit, and the S7 gate
 counts do not change. If all five pass, Part 3 ports it. If not, (c).
+(S9 Part 5: the (b) head is given to every origin, eval.c def_value.)
 
 Part 1, the B1 port (dependent elim for domain families). Sites: check.c
 elim_family (:835), elim_at_domain (:960), rule_elim (:1020),
@@ -919,15 +920,21 @@ to the 0x06 and 0x07 precompiles. The selector helper of test/evmchain.sh
 into `*`, and `uint256,uint256,` repeats on that boundary from six
 arguments up, so each 6-word and 10-word call got a non-hex selector and
 an empty call data. Part 4 gate: test/zk.sh 56 steps, 0 failures; builds
-4; the other counts equal Part 3, exit 0.
+4; the other counts equal Part 3, exit 0. Part 5 gate: evals 139,
+check refusals 186; the other counts equal Part 4, exit 0. DONE
+2026-10-19: the guest theorem is zkFaceEquiv (the kernel reserves
+zkEquiv for the design signature) under the O27 (b) head for every
+origin.
 
 Part 5, zkEquiv as a guest theorem (the O14 ruling). Forward: elim on
 the Quot; the quotSquash case uses isSet PublicFace, from isSet
 Commitment (squash0) and the Sigma of a set and a prop. Backward: elim
 on Trunc1 into the prop Sigma (q : PrivateFace) (Path Commitment
 (commit' q) c), which needs effectiveness of the set quotient (by ua,
-a code family over Quot). isoToEquiv (domain.lang:107) closes it. If
-Part 5 does not clear in two tries, the fallback above.
+a code family over Quot) (S9 Part 5: it needs injectivity of commit',
+the quotEq constructor; no effectiveness and no ua code family).
+isoToEquiv (domain.lang:107) closes it. If Part 5 does not clear in
+two tries, the fallback above.
 
 Gate rows:
 - Part 1: the orbit rows of c3ab788 (survey section 1): 10 bn254 eval

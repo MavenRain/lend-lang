@@ -91,3 +91,5 @@ ua-not-refl.lang
 glue-binder.lang
 elim-path-case.lang
 zk-redefine.lang
+zk-forward-witness.lang
+zk-backward-point.lang

@@ -182,3 +182,5 @@ dao-redefine.lang REFUSE_SIG
 zk-redefine.lang REFUSE_NAME
 zk-guest-word.lang REFUSE_KIT
 amend-end.lang PATH_END
+zk-forward-witness.lang PATH_END
+zk-backward-point.lang TYPE_MISMATCH

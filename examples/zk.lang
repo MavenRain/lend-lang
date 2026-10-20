@@ -185,3 +185,139 @@ def reviewPartialState : State := makeState (mapSet mapEmpty reviewAddr flagYes)
 def reviewPartialRepay : Option (Prod State (List Out)) := zkRepay reviewEnv reviewPartialState (first longCommit) (second longCommit) (first (first longOpen)) (second (first longOpen)) (first (second longOpen)) (second (second longOpen))
 def repayResetsBits : Nat := option 99 (fun (p : Prod State (List Out)) => mapGet (bits (first p)) reviewAddr) reviewPartialRepay
 def repayResetsAcc : Flag := option flagNo (fun (p : Prod State (List Out)) => zkAnd (u256Eq (mapGet (accx (first p)) reviewAddr) 0u) (u256Eq (mapGet (accy (first p)) reviewAddr) 0u)) reviewPartialRepay
+
+-- Part 5: the equivalence PrivateFace ~ PublicFace as a guest theorem (PLAN section 8, Part 5).
+-- Commitment is a set (squash0), Trunc1 (zkFiber c) is a proposition (squash1) and PrivateFace is a
+-- set (quotSquash). A Pi over I is refused (INTERVAL_TYPE), thus each filler is stated for its own
+-- family: fiberPathP is the 1-dim filler over a path of commitments, the quotSquash case of
+-- quotElimProp and the payload of isSetPublicFace are the 2-dim filler (an hcomp over a transported
+-- base, the four tubes from the proposition).
+def isSetCommitment : isSet Commitment :=
+  fun (x : Commitment) (y : Commitment) (p : Path Commitment x y) (q : Path Commitment x y) =>
+    fun (i : I) => fun (j : I) => squash0 (Prod U256 U256) x y p q i j
+def isPropFiber : (c : Commitment) -> isProp (Trunc1 (zkFiber c)) :=
+  fun (c : Commitment) => fun (x : Trunc1 (zkFiber c)) (y : Trunc1 (zkFiber c)) => fun (i : I) => squash1 (zkFiber c) x y i
+def isSetPrivateFace : isSet PrivateFace :=
+  fun (x : PrivateFace) (y : PrivateFace) (p : Path PrivateFace x y) (q : Path PrivateFace x y) =>
+    fun (i : I) => fun (j : I) => quotSquash Opening R x y p q i j
+-- The 1-dim filler: a PathP in the proposition family Trunc1 (zkFiber _) over a path of commitments.
+def fiberPathP : (c : Commitment) -> (d : Commitment) -> (p : Path Commitment c d) -> (t0 : Trunc1 (zkFiber c)) -> (t1 : Trunc1 (zkFiber d)) ->
+  PathP (fun (k : I) => Trunc1 (zkFiber (p @ k))) t0 t1 :=
+  fun (c : Commitment) (d : Commitment) (p : Path Commitment c d) (t0 : Trunc1 (zkFiber c)) (t1 : Trunc1 (zkFiber d)) =>
+    fun (i : I) => squash1 (zkFiber (p @ i))
+      (transp (fun (k : I) => Trunc1 (zkFiber (p @ (i /\ k)))) (~i) t0)
+      (transp (fun (k : I) => Trunc1 (zkFiber (p @ (i \/ ~k)))) i t1) i
+-- The square of witnesses of two paths in PublicFace, by isSet Commitment.
+def witSq : (x : PublicFace) -> (y : PublicFace) -> (p : Path PublicFace x y) -> (q : Path PublicFace x y) ->
+  Path (Path Commitment (witness x) (witness y)) (fun (k : I) => witness (p @ k)) (fun (k : I) => witness (q @ k)) :=
+  fun (x : PublicFace) (y : PublicFace) (p : Path PublicFace x y) (q : Path PublicFace x y) =>
+    isSetCommitment (witness x) (witness y) (fun (k : I) => witness (p @ k)) (fun (k : I) => witness (q @ k))
+-- isSet PublicFace: the witness square is witSq, the payload square is the 2-dim filler.
+def isSetPublicFace : isSet PublicFace :=
+  fun (x : PublicFace) (y : PublicFace) (p : Path PublicFace x y) (q : Path PublicFace x y) =>
+    fun (i : I) => fun (j : I) => pack (witSq x y p q @ i @ j)
+      (hcomp (Trunc1 (zkFiber (witSq x y p q @ i @ j))) (~i \/ i \/ ~j \/ j)
+        (fun (m : I) => [
+          ~i -> isPropFiber (witness (p @ j)) (transp (fun (k : I) => Trunc1 (zkFiber (witSq x y p q @ (i /\ k) @ (j /\ k)))) i0 (payload x)) (payload (p @ j)) @ m,
+          i -> isPropFiber (witness (q @ j)) (transp (fun (k : I) => Trunc1 (zkFiber (witSq x y p q @ (i /\ k) @ (j /\ k)))) i0 (payload x)) (payload (q @ j)) @ m,
+          ~j -> isPropFiber (witness x) (transp (fun (k : I) => Trunc1 (zkFiber (witSq x y p q @ (i /\ k) @ (j /\ k)))) i0 (payload x)) (payload x) @ m,
+          j -> isPropFiber (witness y) (transp (fun (k : I) => Trunc1 (zkFiber (witSq x y p q @ (i /\ k) @ (j /\ k)))) i0 (payload x)) (payload y) @ m ])
+        (transp (fun (k : I) => Trunc1 (zkFiber (witSq x y p q @ (i /\ k) @ (j /\ k)))) i0 (payload x)))
+-- The dependent elim of PrivateFace into a proposition family: the quotEq case is the 1-dim filler,
+-- the quotSquash case the 2-dim filler.
+def quotElimProp : (P : PrivateFace -> Type 0) -> (h : (z : PrivateFace) -> isProp (P z)) -> (c : (o : Opening) -> P (quot Opening R o)) -> (z : PrivateFace) -> P z :=
+  fun (P : PrivateFace -> Type 0) (h : (z : PrivateFace) -> isProp (P z)) (c : (o : Opening) -> P (quot Opening R o)) (z : PrivateFace) =>
+    elim (fun (w : PrivateFace) => P w)
+      (fun (o : Opening) => c o)
+      (fun (a : Opening) (b : Opening) (r : R a b) => fun (i : I) =>
+        h (quotEq Opening R a b r i)
+          (transp (fun (k : I) => P (quotEq Opening R a b r (i /\ k))) (~i) (c a))
+          (transp (fun (k : I) => P (quotEq Opening R a b r (i \/ ~k))) i (c b)) @ i)
+      (fun (x : PrivateFace) (ihx : P x) (y : PrivateFace) (ihy : P y)
+        (p : Path PrivateFace x y) (ihp : PathP (fun (j : I) => P (p @ j)) ihx ihy)
+        (q : Path PrivateFace x y) (ihq : PathP (fun (j : I) => P (q @ j)) ihx ihy) =>
+        fun (i : I) => fun (j : I) =>
+          hcomp (P (quotSquash Opening R x y p q i j)) (~i \/ i \/ ~j \/ j)
+            (fun (m : I) => [
+              ~i -> h (p @ j) (transp (fun (k : I) => P (quotSquash Opening R x y p q (i /\ k) (j /\ k))) i0 ihx) (ihp @ j) @ m,
+              i -> h (q @ j) (transp (fun (k : I) => P (quotSquash Opening R x y p q (i /\ k) (j /\ k))) i0 ihx) (ihq @ j) @ m,
+              ~j -> h x (transp (fun (k : I) => P (quotSquash Opening R x y p q (i /\ k) (j /\ k))) i0 ihx) ihx @ m,
+              j -> h y (transp (fun (k : I) => P (quotSquash Opening R x y p q (i /\ k) (j /\ k))) i0 ihx) ihy @ m ])
+            (transp (fun (k : I) => P (quotSquash Opening R x y p q (i /\ k) (j /\ k))) i0 ihx))
+      z
+-- The dependent elim of Trunc1 (zkFiber c) into a proposition family: the squash1 case is the 1-dim filler.
+def trunc1ElimProp : (c : Commitment) -> (P : Trunc1 (zkFiber c) -> Type 0) -> (h : (t : Trunc1 (zkFiber c)) -> isProp (P t)) ->
+  (k : (z : zkFiber c) -> P (trunc1 (zkFiber c) z)) -> (t : Trunc1 (zkFiber c)) -> P t :=
+  fun (c : Commitment) (P : Trunc1 (zkFiber c) -> Type 0) (h : (t : Trunc1 (zkFiber c)) -> isProp (P t)) (k : (z : zkFiber c) -> P (trunc1 (zkFiber c) z)) (t : Trunc1 (zkFiber c)) =>
+    elim (fun (u : Trunc1 (zkFiber c)) => P u)
+      (fun (z : zkFiber c) => k z)
+      (fun (x : Trunc1 (zkFiber c)) (ihx : P x) (y : Trunc1 (zkFiber c)) (ihy : P y) => fun (i : I) =>
+        h (squash1 (zkFiber c) x y i)
+          (transp (fun (m : I) => P (squash1 (zkFiber c) x y (i /\ m))) (~i) ihx)
+          (transp (fun (m : I) => P (squash1 (zkFiber c) x y (i \/ ~m))) i ihy) @ i)
+      t
+-- commit' is the fold of commit over the quotient; the quotEq case is r itself (R a b is a path of commitments).
+def commit' : PrivateFace -> Commitment := fun (z : PrivateFace) => fold
+  (fun (o : Opening) => commit o)
+  (fun (a : Opening) (b : Opening) (r : R a b) => fun (i : I) => r @ i)
+  (fun (x : Commitment) (y : Commitment) (p : Path Commitment x y) (q : Path Commitment x y) => fun (i : I) => fun (j : I) => isSetCommitment x y p q @ i @ j)
+  z
+-- forward: the witness of a point is the opening itself with refl.
+def forward : PrivateFace -> PublicFace := fun (z : PrivateFace) => fold
+  (fun (o : Opening) => pack (commit o) (trunc1 (zkFiber (commit o)) (pack o refl)))
+  (fun (a : Opening) (b : Opening) (r : R a b) => fun (i : I) =>
+    pack (r @ i) (fiberPathP (commit a) (commit b) r (trunc1 (zkFiber (commit a)) (pack a refl)) (trunc1 (zkFiber (commit b)) (pack b refl)) @ i))
+  (fun (x : PublicFace) (y : PublicFace) (p : Path PublicFace x y) (q : Path PublicFace x y) => fun (i : I) => fun (j : I) => isSetPublicFace x y p q @ i @ j)
+  z
+-- commInj: commit' is injective, by quotEq at two points (no quotient effectiveness is needed).
+def commInj : (z : PrivateFace) -> (w : PrivateFace) -> Path Commitment (commit' z) (commit' w) -> Path PrivateFace z w :=
+  quotElimProp (fun (z : PrivateFace) => (w : PrivateFace) -> Path Commitment (commit' z) (commit' w) -> Path PrivateFace z w)
+    (fun (z : PrivateFace) => fun (f : (w : PrivateFace) -> Path Commitment (commit' z) (commit' w) -> Path PrivateFace z w) (g : (w : PrivateFace) -> Path Commitment (commit' z) (commit' w) -> Path PrivateFace z w) =>
+      fun (i : I) => fun (w : PrivateFace) => fun (e : Path Commitment (commit' z) (commit' w)) => isSetPrivateFace z w (f w e) (g w e) @ i)
+    (fun (o : Opening) => quotElimProp (fun (w : PrivateFace) => Path Commitment (commit o) (commit' w) -> Path PrivateFace (quot Opening R o) w)
+      (fun (w : PrivateFace) => fun (f : Path Commitment (commit o) (commit' w) -> Path PrivateFace (quot Opening R o) w) (g : Path Commitment (commit o) (commit' w) -> Path PrivateFace (quot Opening R o) w) =>
+        fun (i : I) => fun (e : Path Commitment (commit o) (commit' w)) => isSetPrivateFace (quot Opening R o) w (f e) (g e) @ i)
+      (fun (o' : Opening) => fun (e : Path Commitment (commit o) (commit o')) => fun (i : I) => quotEq Opening R o o' e i))
+-- Sg c is the fiber of commit' at c, a proposition: the first component by commInj, the second the 1-dim filler.
+def Sg : Commitment -> Type 0 := fun (c : Commitment) => Sigma (z : PrivateFace) (Path Commitment (commit' z) c)
+def sgPath : (c : Commitment) -> (x : Sg c) -> (y : Sg c) -> Path PrivateFace (witness x) (witness y) :=
+  fun (c : Commitment) (x : Sg c) (y : Sg c) =>
+    commInj (witness x) (witness y) (trans Commitment (commit' (witness x)) c (commit' (witness y)) (payload x) (fun (k : I) => payload y @ ~k))
+-- sgPathP is stated over an abstract path r, thus the checker uses the type of r and does not unfold
+-- commInj inside the transp families (the session 13 probe hit the arena limit on the direct form).
+def sgPathP : (c : Commitment) -> (z : PrivateFace) -> (w : PrivateFace) -> (r : Path PrivateFace z w) ->
+  (pz : Path Commitment (commit' z) c) -> (pw : Path Commitment (commit' w) c) ->
+  PathP (fun (k : I) => Path Commitment (commit' (r @ k)) c) pz pw :=
+  fun (c : Commitment) (z : PrivateFace) (w : PrivateFace) (r : Path PrivateFace z w) (pz : Path Commitment (commit' z) c) (pw : Path Commitment (commit' w) c) =>
+    fun (i : I) => isSetCommitment (commit' (r @ i)) c
+      (transp (fun (k : I) => Path Commitment (commit' (r @ (i /\ k))) c) (~i) pz)
+      (transp (fun (k : I) => Path Commitment (commit' (r @ (i \/ ~k))) c) i pw) @ i
+def isPropSg : (c : Commitment) -> isProp (Sg c) :=
+  fun (c : Commitment) => fun (x : Sg c) (y : Sg c) => fun (i : I) =>
+    pack (sgPath c x y @ i) (sgPathP c (witness x) (witness y) (sgPath c x y) (payload x) (payload y) @ i)
+-- backward: the fold of Trunc1 (zkFiber c) into the proposition Sg c, then the first component.
+def backAt : (c : Commitment) -> Trunc1 (zkFiber c) -> Sg c := fun (c : Commitment) (t : Trunc1 (zkFiber c)) => fold
+  (fun (z : zkFiber c) => pack (quot Opening R (witness z)) (payload z))
+  (fun (x : Sg c) (y : Sg c) => fun (i : I) => isPropSg c x y @ i)
+  t
+def backward : PublicFace -> PrivateFace := fun (y : PublicFace) => witness (backAt (witness y) (payload y))
+-- The round trips: at a point both sides compute, the path and square cases come from the proposition.
+def roundT : (z : PrivateFace) -> Path PrivateFace (backward (forward z)) z :=
+  quotElimProp (fun (z : PrivateFace) => Path PrivateFace (backward (forward z)) z)
+    (fun (z : PrivateFace) => isSetPrivateFace (backward (forward z)) z)
+    (fun (o : Opening) => refl)
+def roundS : (y : PublicFace) -> Path PublicFace (forward (backward y)) y := fun (y : PublicFace) =>
+  trunc1ElimProp (witness y)
+    (fun (t : Trunc1 (zkFiber (witness y))) => Path PublicFace (forward (backward (pack (witness y) t))) (pack (witness y) t))
+    (fun (t : Trunc1 (zkFiber (witness y))) => isSetPublicFace (forward (backward (pack (witness y) t))) (pack (witness y) t))
+    (fun (z : zkFiber (witness y)) => fun (i : I) =>
+      pack (payload z @ i) (fiberPathP (commit (witness z)) (witness y) (payload z) (trunc1 (zkFiber (commit (witness z))) (pack (witness z) refl)) (trunc1 (zkFiber (witness y)) z) @ i))
+    (payload y)
+def zkFaceEquiv : Equiv PrivateFace PublicFace := isoToEquiv PrivateFace PublicFace forward backward roundS roundT
+def zkLoanPath : Path (Type 0) PrivateFace PublicFace := ua PrivateFace PublicFace zkFaceEquiv
+-- The closed opening (7, 11): the four PLAN rows.
+def openKA : Opening := pair 7u 11u
+def zkForwardKA : PublicFace := forward (quot Opening R openKA)
+def zkBackwardKA : PrivateFace := backward (pack (commit openKA) (trunc1 (zkFiber (commit openKA)) (pack openKA refl)))
+def zkRoundTKA : Path PrivateFace (backward (forward (quot Opening R openKA))) (quot Opening R openKA) := roundT (quot Opening R openKA)
+def zkRoundSKA : PublicFace := roundS (pack (commit openKA) (trunc1 (zkFiber (commit openKA)) (pack openKA refl))) @ i1

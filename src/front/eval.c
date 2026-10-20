@@ -520,8 +520,10 @@ static const Value *env_lookup(Machine *m, const Env *env, uint32_t index) {
   return env->value;
 }
 
-/* The O27 (b) probe: a copy of V with the head HEAD at ARGS. The copy
-   has the same fields, thus it is the same value. */
+/* The O27 (b) head: a copy of V with the head HEAD at ARGS. The copy
+   has the same fields, thus it is the same value. Every definition gets
+   the head, whatever its origin (S9 Part 5: a guest conversion of
+   backward (forward z) with itself needs it). */
 static const Value *with_head(Machine *m, const Value *v, uint32_t head, const Value *const *args, uint32_t argc) {
   Value *t;
   if (v == NULL || v->kind == VAL_TRAP)
@@ -554,7 +556,7 @@ const Value *def_value(Machine *m, uint32_t index) {
     return internal(m, "an unknown definition");
   d = &m->defs[index];
   if (d->value == NULL)
-    d->value = d->origin == ORIGIN_DOMAIN ? with_head(m, eval_core(m, NULL, d->body), index + 1u, NULL, 0) : eval_core(m, NULL, d->body);
+    d->value = with_head(m, eval_core(m, NULL, d->body), index + 1u, NULL, 0);
   return d->value;
 }
 
@@ -3488,9 +3490,9 @@ static int conv_loop(Machine *m, uint32_t level, const Value *a, const Value *b)
   return 0;
 }
 
-/* The O27 (b) fast path: the same kernel definition at arguments that are
-   equal gives equal values. When an argument differs, conv_values compares
-   the unfolded values. */
+/* The O27 (b) fast path: the same definition (kernel or guest, every
+   origin) at arguments that are equal gives equal values. When an argument
+   differs, conv_values compares the unfolded values. */
 static int conv_head(Machine *m, uint32_t level, const Value *a, const Value *b) {
   uint32_t i;
   if (a->head == 0 || a->head != b->head || a->head_argc != b->head_argc)

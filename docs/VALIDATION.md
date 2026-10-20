@@ -286,6 +286,27 @@ fix, repayUnranges, repayResetsBits and repayResetsAcc returned 1, 1 and 0;
 after the fix they return 0, 0 and 1. The complete gate passes with 135 eval
 rows and 56 zk chain steps. No CI checks were removed or weakened.
 
+S9 Part 5 adds the equivalence of PrivateFace and PublicFace as a guest
+theorem of examples/zk.lang: zkFaceEquiv := isoToEquiv PrivateFace
+PublicFace forward backward roundS roundT (the kernel reserves the name
+zkEquiv for the design signature) and zkLoanPath := ua PrivateFace
+PublicFace zkFaceEquiv. forward folds the quotient of openings; backward
+folds the truncated opening into Sg c, the fiber of commit' at c, a
+proposition by commInj: commit' is injective by the quotEq constructor, so
+the proof needs no effectiveness of the set quotient. A Pi over I is
+refused, so each filler is stated for its own family (fiberPathP,
+isSetPublicFace, quotElimProp, trunc1ElimProp), and sgPathP takes the path
+as an argument so the checker does not unfold commInj. The kernel gives
+the O27 (b) conversion head to every definition origin (def_value in
+src/front/eval.c): the conversion of backward (forward z) with itself
+unfolded the guest definitions on both sides and reached the arena limit.
+Four eval rows at the closed opening (7, 11) and two negative check rows
+(zk-forward-witness.lang, zk-backward-point.lang) bring the gate to 139
+eval rows and 186 check refusals. Mutants: the head restored to
+ORIGIN_DOMAIN only (killed by the roundT OOM), a wrong forward witness
+and a wrong backward point: 3 of 3 KILLED. Loan and PrivateLoan stay in
+S10.
+
 Staged review (2026-10-19) reproduced and fixed three defects:
 
 - HIGH: Schnorr and bit provers reused the same deterministic nonce for
