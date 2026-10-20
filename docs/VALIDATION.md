@@ -452,7 +452,25 @@ caller, and a non-member reverts. The Part 4 Forfeited guard moves from
 zkEnroll to zkPropose (zkProposeForfeited 0). evals 166 to 183, zk chain
 78 to 114 steps (3 new gas rows: zkPropose 28,948, zkVote 53,734, zkAmend
 84,759); the 5 gas rows of Part 4 do not move. 16 mutants (the vote,
-amend, propose, exit and init tests) are all killed.
+amend, propose, exit and init tests) are all killed. The sizes after
+Part 5 (the test/build.sh:134 form): runtime 8294 bytes (33.7 % of
+EIP-170 24576), initcode 8391 bytes (17.1 % of EIP-3860 49152). The
+deploy gas, measured in the form of the PLAN section 6 derivation, is
+1,726,841 (8294 x 200 for the code deposit, 68,041 for the
+constructor).
+
+S10 close (2026-10-20). S10 validates the contract end to end on the
+kit EVM runner only: deploy, the governed admit (propose, vote, amend),
+borrow with its range proof, repay and liquidate, the host and EVM
+differential and the gas rows. S10 does not validate: voter anonymity
+(the votes are public; O12 (a), bLSAG, is S12); the governed exit (S11);
+the terms and the O17 window after a terms change (S11); a public chain
+(O22: the chain probe is a USER step and has not run). The ruled exit
+rule of Part 5 (an exit during a poll keeps the cast vote and drops
+nmem) lets voters lower the bar: with nmem 4 and two yes votes, both
+voters exit, nmem is 2, and 2 x 2 > 2 admits the candidate with no vote
+from the 2 remaining members. The docs did not give this effect before
+the close; the S11 governed exit must keep it in view.
 
 Staged review (2026-10-19) reproduced and fixed three defects:
 

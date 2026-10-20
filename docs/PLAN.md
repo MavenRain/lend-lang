@@ -379,6 +379,27 @@ step numbers count the calls, as in the Part 4 table):
 | 16 | zkVote 1, first yes (row) | ok | 53,734 |
 | 18 | zkAmend, admit ee (row) | ok | 84,759 |
 
+The S10 size rows after Part 5 (S10 close, 2026-10-20, measured on a
+copy of 48a6b86). The sizes take the test/build.sh:134 form. The deploy
+gas takes the form of the derivation above, on the initcode:
+`evm --create --gas 30000000 --codefile <initcode> --statdump run`
+prints 28,273,159 at 30,000,000.
+
+| Item | Bytes | Limit | Used |
+|---|---|---|---|
+| initcode (`langc --kit build examples/zk.lang`) | 8391 | EIP-3860 49152 | 17.1 % |
+| runtime (`--runtime`, the deployed code) | 8294 | EIP-170 24576 | 33.7 % |
+
+| Step | Call | Result | Gas |
+|---|---|---|---|
+| deploy | create, 8294 bytes deposited | ok | 1,726,841 (measured) |
+
+The deploy gas is 1,726,841 = 8294 x 200 (the code deposit) + 68,041
+(the constructor). The constructor of the derivation above is 1,548 gas.
+The 66,493 more agrees with 3 cold zero-to-nonzero SSTOREs in the Part 5
+init (members aa, status aa, nmem: 3 x 22,100 = 66,300) and 193 gas of
+other init code. This split is a hypothesis; only the total is measured.
+
 After Part 4, the zk chain had 78 steps (73 calls and 5 gas rows). The S10
 gas table after Part 4 (the same rules as the Part 3 table; its step
 numbers and its zkEnroll rows are those of the Part 4 chain):
@@ -497,8 +518,10 @@ for each build), the counts in docs/STATUS.md, and a USER commit.
 | S7 | DAO prelude: Obj, act, ChoiceRule, Aggregation, Gov, IsFixedPointObj, Config, amendPath; LendingLedger over Membership by ua: DONE 2026-10-18, without amendPath (O27) | a non-invariant constitution, a wrong unit, an exit that does not forfeit, the ∃ of IsSelfConstituting as a Prop |
 | S8 | port orbit-lang B1 676c7a8 (dependent elim for domain families) and B2 eafa1df (outcomeSet and menu slots, lend names, separate splice); O27 option (b) probe, then amendPath if it clears; law 2 uniqueness (USER ruling S8): DONE 2026-10-18, the guest term is amendExit (amendPath stays reserved) | the orbit-lang B1 rows (elim-*); the B2 rows with lend names (outcome-set-type, menu-type, dao-no-set, dao-redefine); amendPath rows if O27 (b) clears |
 | S9 | ZK ledger: Pedersen on BN254 in C, Sigma-protocol verifier lowering, zkEquiv, PrivateLoan, borrow, repay, liquidate (moved from S8, USER ruling S8) | known-answer vectors; mutants: wrong opening, range overflow, non-member step, step on a Forfeited position, point not on the curve |
-| S10 | contract end to end: deploy, vote, amend, borrow, repay, liquidate; host and EVM differential; gas table; chain probe | differential rows, revert rows, EIP-170 and EIP-3860 size limits; Part 1 Loan and zkPrivateLoan DONE 2026-10-20; Part 2 pure ledger borrow, repay, liquidate DONE 2026-10-20; Part 3 differential, gas table, EIP rows DONE 2026-10-20; Part 4 ledger/contract integration DONE 2026-10-20; Part 5 governed admit DONE 2026-10-20 |
-| S11 | regimes (optional, O23), docs, final gate | regime rows |
+| S10 | contract end to end: deploy, vote, amend, borrow, repay, liquidate; host and EVM differential; gas table; chain probe | differential rows, revert rows, EIP-170 and EIP-3860 size limits; Part 1 Loan and zkPrivateLoan DONE 2026-10-20; Part 2 pure ledger borrow, repay, liquidate DONE 2026-10-20; Part 3 differential, gas table, EIP rows DONE 2026-10-20; Part 4 ledger/contract integration DONE 2026-10-20; Part 5 governed admit DONE 2026-10-20; S10 CLOSED 2026-10-20: the S10 form of vote and amend (section 7); the governed exit and the terms menu move to S11, O12 (a) to S12, the chain probe to a USER step (O22) |
+| S11 | governance (added at the S10 close, USER ruling 2026-10-20): the governed exit (a poll kind, admit or exit), then the terms menu (`Gov L`) and the O17 window after a terms change | exit poll rows (the zkDepart state change on cand, an exit poll on a non-member), the bar effect of an exit during a poll (VALIDATION, S10 close), the 8 S10 gas rows kept or ruled, a liquidate inside the window |
+| S12 | O12 (a) (added at the S10 close): bLSAG ring votes over stored member keys (O19 (b)) | a vote by a key outside the ring, a reused key image, the zkVote gas row as a function of nmem |
+| S13 | regimes (optional, O23), docs, final gate (S11 until the S10 close) | regime rows |
 
 Builder call (S2, 2026-10-17): the port of orbit-lang 7734007. Identity
 check: on d4fdb2e, the trees src, test, domain, examples, Makefile,
@@ -1231,7 +1254,8 @@ has options, (a) is the ruling. O20 is a USER ruling from the request.
   that argument; the signature is a bLSAG ring signature over the members
   (orbit-lang O10), so the contract keeps only the orbit. (b) one
   transaction carries a whole configuration signed by all members (no
-  anonymity).
+  anonymity). S10 Part 5 (2026-10-20): the votes are public (the
+  caller); (a) stays open, at S12.
 - O13 Commitment: (a) Pedersen over BN254 G1. (b) a keccak256 commitment
   (no homomorphism, so the design's monoid law fails). RULED S9
   (2026-10-19): (a); H by try-and-increment hash-to-curve from the tag
@@ -1257,14 +1281,21 @@ has options, (a) is the ruling. O20 is a USER ruling from the request.
 - O17 Liquidation: after an amendment that changes the terms, each holder
   posts a fresh health proof within a grace window (a block count in the
   program). After the window, `liquidate` makes a position without one
-  Forfeited, the same state as an exit.
+  Forfeited, the same state as an exit. In the S10 contract, a borrow
+  sets the deadline to `now + zkGrace` in timestamp units. Liquidation
+  is allowed once `now` exceeds the deadline, with no further grace
+  period. A borrow at 1 sets deadline 8 and can be liquidated at 9.
+  The window after a terms change waits for the terms menu (S11).
 - O18 Assets: (a) none: a private credit ledger in one abstract unit; the
   design admits no deposit or withdraw. (b) shielded deposit and withdraw
   as kit-mode entries, outside the design span (needs a USER ruling).
 - O19 Member access: (a) each loan step carries a Schnorr signature by the
   agent key: the identity is public, the amounts are private. (b) a bLSAG
   ring signature and a per-step nullifier (anonymous borrowers; positions
-  keyed by a pseudonym).
+  keyed by a pseudonym). S10 Part 4 (2026-10-20): the member access is
+  the transaction caller; the transaction signature is the agent
+  signature, and the identity is public, as (a) says. The contract
+  stores no agent key, so (b) and O12 (a) need stored keys first.
 - O20 Proof irrelevance: PROHIBITED (USER ruling 2026-10-17, section 1).
 - O21 Dependent elimination on a HIT: the cases of path constructors are
   PathP over the motive. LendingLedger over Membership (S7) and law
@@ -1272,9 +1303,17 @@ has options, (a) is the ruling. O20 is a USER ruling from the request.
 - O22 Chains: Ethereum mainnet has 0x06, 0x07 and 0x08. Telcoin Network:
   confirm the precompile set and the EIP-170 limit from the chain spec or
   an RPC probe (orbit-lang O16). The repo gate runs only the kit EVM runner.
+  S10 close (2026-10-20): the chain probe is a USER step:
+  `sh ~/Documents/lend-lang-work/S10-chain-probe.sh RPC_URL` sends
+  eth_chainId, eth_call to 0x06 and 0x07 with the test/precompile.sh:49
+  vectors (expect 2G) and eth_estimateGas of two creates (initcode
+  0x6160006000f3 returns 24576 bytes, expect ok; 0x6160016000f3 returns
+  24577 bytes, expect an error). No result is recorded yet; O22 stays
+  open until the USER runs it on Telcoin Network.
 - O23 Regimes: the design says amendments inherit the three UAT regimes.
   Default: the orbit-lang O8 and O9 reading (a three-point coproduct the
-  compiler computes from the menu), at S11.
+  compiler computes from the menu), at S13 (S11 until the S10 close; the
+  S11 terms menu comes first).
 - O24 Scope of the claim: lend-lang proves the laws on the discrete
   quotient reading (U/Characterization.lean:81). Hiding, binding, soundness
   and zero knowledge are assumptions in docs/VALIDATION.md.

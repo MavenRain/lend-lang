@@ -875,3 +875,137 @@ the repo src after each loop.
 | session 12 port, repo gate | wf-closer | session 12 |
 | records | wf-builder Fable xhigh | died in session 12, `reasoning_extraction`, before a file change |
 | sessions 1 to 13 | main loop | by hand |
+
+## S9
+
+S9 builds the ZK ledger on the S8 tree, in the part order of the USER
+rulings (S9, 2026-10-19): the port of orbit-lang c3ab788, the host
+Pedersen commitment on BN254 G1 and the Sigma prover with a known-answer
+fixture (test/zktool.c), the zk prelude text and the guest terms
+(examples/zk.lang), the lowering and the chain rows (test/zk.sh), and
+zkEquiv (O14) in its own part. PLAN section 8, "Builder call (S9,
+2026-10-19)", has the rulings, the defaults and the result paragraphs.
+
+### Counts
+
+| Gate line | lend-lang S8 | lend-lang S9 |
+|---|---|---|
+| examples | 35 | 37 |
+| parse refusals | 19 | 19 |
+| check refusals | 181 | 186 |
+| kit-only refusals | 22 | 24 |
+| evals | 101 | 139 |
+| runs, run refusals | 5, 10 | 5, 10 |
+| asmtool checks | 8 | 8 |
+| builds | 3 | 4 |
+| lower refusals | 16 | 16 |
+| build checks | 33 | 34 |
+| dispatch | 20 | 20 |
+| evm steps | 43 | 43 |
+| precompile | not in the S8 table | 24 |
+| zk chain steps | not in the S8 table | 56 |
+
+The S9 column is ~/Documents/lend-lang-work/S9-p5-gate.log (exit 0).
+The part logs are S9-p1-gate.log to S9-p5-gate.log in the same
+directory.
+
+### Parts
+
+- Part 1 (session 2): the port of orbit-lang c3ab788, by hand. Record:
+  ~/Documents/lend-lang-work/S9-p1-record.md.
+- Part 2 (session 3): the host Pedersen and Sigma prover, with 23 checks
+  in test/zktool.c. Record: S9-p2-record.md.
+- Part 3 (sessions 6 to 8, options (a), (b) and (c)): the zk prelude
+  text and the guest terms, with the new internal op u256AddMod (the
+  split `e0 + e1 = e (mod r)` of the range proof, lowered to ADDMOD).
+  Record: S9-p3-record.md.
+- Part 4 (sessions 10 and 11): the Part 4 entries of examples/zk.lang
+  and the chain gate test/zk.sh (56 steps: the 32-bit range chain with
+  zkRangeBit and zkRangeDone, then zkRepay and zkLiquidate). Record:
+  S9-p4-record-part.md.
+- Part 5 (sessions 13 to 15): the sgPathP fix, the probe and the OOM,
+  then the kernel edit in src/front/eval.c def_value (the with_head form
+  for every origin, not only ORIGIN_DOMAIN), the block appended to
+  examples/zk.lang (lines 187 to 323), 4 eval rows (136 to 139) and
+  test/check/zk-forward-witness.lang (PATH_END). Record:
+  S9-p5-record.md.
+
+### Mutants
+
+| Part | Result | Mutants |
+|---|---|---|
+| 4 | 6 of 6 KILLED (S9-p4-mutants.log) | wrong opening (zkDlEq without the e.C term), range overflow in the prelude (zkRangeStep without bitVerify), range overflow on the chain (zkRangeBit without bitVerify), non-member (zkBorrow without zkPosActive), Forfeited (zkPosActive without the status = 1 test), a point not on the curve (g1_from_words without g1_on_curve) |
+| 5 | 3 of 3 KILLED (S9-p5-mutants.log) | (1) the admission mutant: the ORIGIN_DOMAIN head restored, so `--kit check examples/zk.lang` reports OOM; (2) and (3) in the record |
+
+The records of Parts 1 to 3 have no mutant run. The Part 4 list is the
+mutant list of the S9 row of PLAN section 8.
+
+### Builders
+
+Both builder tiers died on the classifier in sessions 1 and 2, before
+the Part 1 and Part 2 builds. The main loop built Parts 1 to 3 by hand
+(the record heads) and made the Part 5 kernel edit and build in
+sessions 14 and 15. S9-p4-record-part.md has the Part 4 route.
+
+## S10
+
+S10 runs the contract end to end on the S9 tree: Loan and zkPrivateLoan,
+the pure ledger borrow, repay and liquidate, the host and EVM
+differential with the gas table and the EIP size rows, the ledger and
+contract integration, and the governed admit (propose, vote, amend, the
+self-exit of the caller). The S10 note of PLAN section 7 gives the S10
+form of vote and amend. The close part (sessions 11 and 12, 2026-10-20)
+is docs only: the size rows and the measured deploy gas after Part 5,
+the S10 notes of O12, O17, O19 and O22, the S10 close paragraph of
+docs/VALIDATION.md, and the new rows S11 (the governed exit, then the
+terms menu) and S12 (O12 (a)). The old S11 is S13. The chain probe is a
+USER step (O22).
+
+### Counts
+
+| Gate line | lend-lang S9 | Part 1 | Part 2 | Part 3 | Part 4 staged | Part 4 commit e988ab5 | Part 5 = 48a6b86 |
+|---|---|---|---|---|---|---|---|
+| check refusals | 186 | 189 | 193 | 193 | 193 | 193 (h) | 193 |
+| evals | 139 | 142 | 150 | 150 | 156 | 166 | 183 |
+| runs | 5 | 5 | 5 | 6 | 6 | 6 | 6 |
+| build checks | 34 | 34 | 34 | 36 | 36 | 36 | 36 |
+| zk chain steps | 56 | 56 | 56 | 61 | 65 | 78 | 114 |
+| diff rows | 15 | 15 | 15 | 16 | 16 | 16 | 16 |
+
+The other lines are equal in all columns: examples 37, parse refusals
+19, kit-only refusals 24, run refusals 10, builds 4, lower refusals 16,
+asmtool 8, dispatch 20, evm steps 43, precompile 24, mock 13, emit 27,
+zk 33. The Part 1 to Part 4 columns are the gate logs of the staged
+trees. The e988ab5 column is the session 9 baseline
+(~/Documents/lend-lang-work/S10-p5-brief.md section 1). (h) is a
+hypothesis: Part 5 adds no check row, so e988ab5 has 193. No gate log
+of bf2c697 or 04174b8 exists. The close tree changes docs only; its gate
+log is ~/Documents/lend-lang-work/S10-close-gate.log.
+
+### Parts
+
+| Part | Scope | Session, record | Staged tree | USER commit (tree) |
+|---|---|---|---|---|
+| 1 | Loan, zkPrivateLoan | 2, S10-p1-record.md | 1ea99a67 | 7c18f30 (1ea99a67, equal) |
+| 2 | ledger borrow, repay, liquidate | 4, S10-p2-record.md | f0748ade | bf2c697 (22ba30cc, differs: +184/-1, staged +167/-1) |
+| 3 | differential, gas table, EIP rows | 6, S10-p3-record.md | 261fc937 | 04174b8 (e882801c, differs) |
+| 4 | ledger/contract integration | 8, S10-p4-record.md | 637c0a20 | e988ab5 (2da59d26, differs: +zkNegScalar, +zkRepayDeadline) |
+| 5 | governed admit | 10, S10-p5-record.md | d431c76d | 48a6b86 (d431c76d, equal) |
+
+The records are in ~/Documents/lend-lang-work. The USER commits of
+Parts 2, 3 and 4 differ from the staged trees; the records give the
+staged numbers.
+
+### Mutants
+
+50 of 50 KILLED, on the staged trees: Part 1 3 of 3, Part 2 9 of 9,
+Part 3 11 of 11, Part 4 11 of 11, Part 5 16 of 16. The USER deltas of
+Parts 2 to 4 have no mutant record. The close part runs no mutant (docs
+only).
+
+### Builders
+
+| Stage | Tier | Result |
+|---|---|---|
+| Parts 1 to 5 | see the part records | S10-p1-record.md to S10-p5-record.md |
+| close brief and close (sessions 11 and 12) | main loop | by hand, no builder call |
