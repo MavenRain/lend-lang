@@ -266,8 +266,9 @@ test/build.sh bounds both sizes by their limits.
 
 The gas is the `EVM gas used` line of `evm run --statdump`: execution gas
 only, with no 21,000 intrinsic gas and no calldata gas. The step numbers
-count the calls of test/zk.sh (the gas rows are not counted). The five
-rows marked "row" are exact gas rows in test/zk.sh (`gasRow`).
+count the calls of test/zk.sh (the gas rows are not counted). The rows
+marked "row" are exact gas rows in test/zk.sh (`gasRow`): five in the
+Part 4 table and three in the Part 5 table.
 
 | Step | Call | Result | Gas |
 |---|---|---|---|
@@ -360,8 +361,27 @@ adds six rows from bb: enroll, borrow 5u 13u, borrow 7u 13u, repay 5u
 (revert), then the same 13 regression calls. Ten further eval rows check
 the repayment deadlines, partial liquidation, independent d and r above q,
 and round trips at q - 1, q and the maximum U256 word.
-The zk chain has 78 steps (73 calls and 5 gas rows). The S10
-gas table after Part 4 (the same rules as the Part 3 table):
+S10 Part 5 (2026-10-20): the governed admit (section 7). zkPropose,
+zkVote and zkAmend replace the ungoverned zkEnroll, zkDepart becomes the
+self-exit of the caller, and zkIsMember is the `isMember` view. The state
+gets six fields at the end (poll, cand, ayes, nays, nmem, voted), so the
+old slots do not move. init holds the founder aa (a member, Active, nmem
+1). The 5 gas rows of Part 4 keep their numbers: zkPropose and zkDepart
+take the dispatch places of zkEnroll and zkDepart, and zkVote, zkAmend and
+zkIsMember come after zkBitView. A probe with the 5 entries before zkBorrow
+moved each of the 5 rows by +110 gas (22 gas for each dispatch test). The
+zk chain has 114 steps (106 calls and 8 gas rows). The 3 new gas rows (the
+step numbers count the calls, as in the Part 4 table):
+
+| Step | Call | Result | Gas |
+|---|---|---|---|
+| 11 | zkPropose ee, first (row) | ok | 28,948 |
+| 16 | zkVote 1, first yes (row) | ok | 53,734 |
+| 18 | zkAmend, admit ee (row) | ok | 84,759 |
+
+After Part 4, the zk chain had 78 steps (73 calls and 5 gas rows). The S10
+gas table after Part 4 (the same rules as the Part 3 table; its step
+numbers and its zkEnroll rows are those of the Part 4 chain):
 
 | Item | Bytes | Limit | Used |
 |---|---|---|---|
@@ -441,6 +461,18 @@ O19).
 | `liquidate(agent)` | after the grace window, a position without a fresh health proof becomes Forfeited |
 | views | `terms()`, `commitmentOf(agent)`, `isMember(agent)`, `selfConstituting()` |
 
+The S10 form (Part 5, examples/zk.lang) is smaller. The constructor stores
+one founder member (aa, Active, nmem 1). `zkPropose(a)` opens one poll on
+the admit of one candidate. `zkVote(c)` takes c = 1 (yes) or c = 0 (no),
+once from each member in each poll. `zkAmend()` admits the candidate when 2
+ayes > nmem, rejects it when 2 nays >= nmem, and else reverts; both results
+close the poll and increment the poll id. The voter set is the member flag,
+so a liquidated member still votes. The caller signs each vote, so the votes
+are public and O12 stays open. `zkDepart()` is the self-exit (exitOne); an
+exit while a poll is open is accepted (the cast vote stays, nmem drops).
+`zkIsMember(a)` is the `isMember` view. There is one admit for each poll,
+no governed exit and no terms menu.
+
 The contract holds no tokens by default (O18): the design admits no deposit
 or withdraw operation, so the ledger is a private credit ledger in one
 abstract unit. A constitution is code, so the contract holds a finite menu
@@ -465,7 +497,7 @@ for each build), the counts in docs/STATUS.md, and a USER commit.
 | S7 | DAO prelude: Obj, act, ChoiceRule, Aggregation, Gov, IsFixedPointObj, Config, amendPath; LendingLedger over Membership by ua: DONE 2026-10-18, without amendPath (O27) | a non-invariant constitution, a wrong unit, an exit that does not forfeit, the ∃ of IsSelfConstituting as a Prop |
 | S8 | port orbit-lang B1 676c7a8 (dependent elim for domain families) and B2 eafa1df (outcomeSet and menu slots, lend names, separate splice); O27 option (b) probe, then amendPath if it clears; law 2 uniqueness (USER ruling S8): DONE 2026-10-18, the guest term is amendExit (amendPath stays reserved) | the orbit-lang B1 rows (elim-*); the B2 rows with lend names (outcome-set-type, menu-type, dao-no-set, dao-redefine); amendPath rows if O27 (b) clears |
 | S9 | ZK ledger: Pedersen on BN254 in C, Sigma-protocol verifier lowering, zkEquiv, PrivateLoan, borrow, repay, liquidate (moved from S8, USER ruling S8) | known-answer vectors; mutants: wrong opening, range overflow, non-member step, step on a Forfeited position, point not on the curve |
-| S10 | contract end to end: deploy, vote, amend, borrow, repay, liquidate; host and EVM differential; gas table; chain probe | differential rows, revert rows, EIP-170 and EIP-3860 size limits; Part 1 Loan and zkPrivateLoan DONE 2026-10-20; Part 2 pure ledger borrow, repay, liquidate DONE 2026-10-20; Part 3 differential, gas table, EIP rows DONE 2026-10-20; Part 4 ledger/contract integration DONE 2026-10-20 |
+| S10 | contract end to end: deploy, vote, amend, borrow, repay, liquidate; host and EVM differential; gas table; chain probe | differential rows, revert rows, EIP-170 and EIP-3860 size limits; Part 1 Loan and zkPrivateLoan DONE 2026-10-20; Part 2 pure ledger borrow, repay, liquidate DONE 2026-10-20; Part 3 differential, gas table, EIP rows DONE 2026-10-20; Part 4 ledger/contract integration DONE 2026-10-20; Part 5 governed admit DONE 2026-10-20 |
 | S11 | regimes (optional, O23), docs, final gate | regime rows |
 
 Builder call (S2, 2026-10-17): the port of orbit-lang 7734007. Identity

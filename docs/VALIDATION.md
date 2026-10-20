@@ -439,6 +439,21 @@ Staged review (2026-10-20) reproduced and fixed two defects in Part 4:
   cover these fixes; the five initial regression probes fail on the
   original staged code and pass after the fixes.
 
+S10 Part 5 (2026-10-20) adds the governed admit of PLAN section 7 in its
+smallest form. init holds one founder, aa (a member, Active, nmem 1).
+zkPropose opens one poll on one candidate; zkVote takes one yes or no vote
+from each member in each poll; zkAmend admits when 2 ayes > nmem, rejects
+when 2 nays >= nmem, and else reverts. The member flag is the voter set.
+The votes are public: the caller signs each vote, so this part gives no
+voter anonymity, and O12 (the bLSAG ring signature) stays open. Finding:
+the old zkDepart took any address and had no caller check, so any account
+could forfeit any member (status 2). zkDepart is now the self-exit of the
+caller, and a non-member reverts. The Part 4 Forfeited guard moves from
+zkEnroll to zkPropose (zkProposeForfeited 0). evals 166 to 183, zk chain
+78 to 114 steps (3 new gas rows: zkPropose 28,948, zkVote 53,734, zkAmend
+84,759); the 5 gas rows of Part 4 do not move. 16 mutants (the vote,
+amend, propose, exit and init tests) are all killed.
+
 Staged review (2026-10-19) reproduced and fixed three defects:
 
 - HIGH: Schnorr and bit provers reused the same deterministic nonce for
