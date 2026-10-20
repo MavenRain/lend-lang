@@ -307,6 +307,28 @@ ORIGIN_DOMAIN only (killed by the roundT OOM), a wrong forward witness
 and a wrong backward point: 3 of 3 KILLED. Loan and PrivateLoan stay in
 S10.
 
+S10 Part 1 adds Loan and zkPrivateLoan to examples/zk.lang. Loan is the
+ua path zkLoanPath read backwards (Loan @ i0 is PublicFace, Loan @ i1
+is PrivateFace): a definition typed I -> Type 0 is refused by rule R9,
+so the PLAN family Loan i is Loan @ i. zkPrivateLoan c is Sg c with the
+binder typed by Loan @ i1, and isPropZkPrivateLoan is isPropSg (one
+private loan per commitment). The design name PrivateLoan stays a
+kernel-given signature name (REFUSE_SIG), and (unglue x).1 of PLAN 211
+is spelled commit' x: Loan @ i1 reduces to PrivateFace by the true-key
+rule, so unglue at that type is UNGLUE_TYPE. Three eval rows at the
+closed opening (7, 11): zkLoanKA, the transport along Loan from i1 to
+i0, prints the forward value with each component under two empty hcomp
+layers (the kernel keeps hcomp at i0 with the empty system as a normal
+form, so the row is not byte-equal to zkForwardKA); zkLoanBackKA, the
+transport back, prints the point quot Opening R (pair 7u 11u) under two
+empty hcomp layers (14 s, no OOM); zkPrivateLoanKA, the witness of the
+representative private loan, is byte-equal to zkBackwardKA. Three check
+rows (zk-private-loan-name.lang REFUSE_SIG, zk-loan-unglue.lang
+UNGLUE_TYPE, zk-private-loan-point.lang PATH_END) bring the gate to 142
+eval rows and 189 check refusals. Mutants: the key flipped to
+zkLoanPath @ i, the binder swapped to PublicFace and the branch
+equivalence swapped to idEquiv PublicFace: 3 of 3 KILLED.
+
 Staged review (2026-10-19) reproduced and fixed three defects:
 
 - HIGH: Schnorr and bit provers reused the same deterministic nonce for

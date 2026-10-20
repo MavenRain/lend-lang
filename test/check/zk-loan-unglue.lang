@@ -1,0 +1,10 @@
+-- unglue at a true key (S10 Part 1). PLAN 211 spells the commitment of x : Loan i1 as (unglue x).1, but
+-- Loan @ i1 reduces to its branch PrivateFace (the true-key rule of Glue), so the type of x is no Glue and
+-- unglue x is refused. The branch equivalence does not matter for the reduction, so this standalone file
+-- stands loanAt, the ua path of idEquiv PrivateFace, for Loan. examples/zk.lang spells (unglue x).1 as
+-- commit' x. A kit row: U256 is a kit item, so posWord exists in kit mode only (test/check/kit.txt).
+def Position : Type 0 := U256
+def posWord : Position -> U256 := fun (p : Position) => p
+
+def loanAt : Path (Type 0) PrivateFace PrivateFace := ua PrivateFace PrivateFace (idEquiv PrivateFace)
+def loanFace : (x : loanAt @ i1) -> PrivateFace := fun (x : loanAt @ i1) => unglue x

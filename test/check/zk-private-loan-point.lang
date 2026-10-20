@@ -1,0 +1,19 @@
+-- A private loan with another point (S10 Part 1). A private loan at commit openKA asks for a path from
+-- commit' x to commit openKA; the point quot Opening R (pair 0u 0u) with refl is a path from commit (pair
+-- 0u 0u) to itself, not to commit (pair 7u 11u). The binder is typed by a Glue path at its true key, as
+-- zkPrivateLoan is (loanAt stands for Loan, see zk-loan-unglue.lang). isSetCommitment and commit' are the
+-- examples/zk.lang definitions. A kit row: U256 is a kit item, so posWord exists in kit mode only.
+def Position : Type 0 := U256
+def posWord : Position -> U256 := fun (p : Position) => p
+
+def isSetCommitment : isSet Commitment :=
+  fun (x : Commitment) (y : Commitment) (p : Path Commitment x y) (q : Path Commitment x y) =>
+    fun (i : I) => fun (j : I) => squash0 (Prod U256 U256) x y p q i j
+def commit' : PrivateFace -> Commitment := fun (z : PrivateFace) => fold
+  (fun (o : Opening) => commit o)
+  (fun (a : Opening) (b : Opening) (r : R a b) => fun (i : I) => r @ i)
+  (fun (x : Commitment) (y : Commitment) (p : Path Commitment x y) (q : Path Commitment x y) => fun (i : I) => fun (j : I) => isSetCommitment x y p q @ i @ j)
+  z
+def loanAt : Path (Type 0) PrivateFace PrivateFace := ua PrivateFace PrivateFace (idEquiv PrivateFace)
+def openKA : Opening := pair 7u 11u
+def privateLoanPt : Sigma (x : loanAt @ i1) (Path Commitment (commit' x) (commit openKA)) := pack (quot Opening R (pair 0u 0u)) refl

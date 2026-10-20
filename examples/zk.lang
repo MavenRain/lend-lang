@@ -321,3 +321,21 @@ def zkForwardKA : PublicFace := forward (quot Opening R openKA)
 def zkBackwardKA : PrivateFace := backward (pack (commit openKA) (trunc1 (zkFiber (commit openKA)) (pack openKA refl)))
 def zkRoundTKA : Path PrivateFace (backward (forward (quot Opening R openKA))) (quot Opening R openKA) := roundT (quot Opening R openKA)
 def zkRoundSKA : PublicFace := roundS (pack (commit openKA) (trunc1 (zkFiber (commit openKA)) (pack openKA refl))) @ i1
+-- S10 Part 1 (PLAN 210-211). Loan is the ua path zkLoanPath read backwards: Loan @ i0 is PublicFace and
+-- Loan @ i1 is PrivateFace, both by the true-key rule of Glue. The PLAN family Loan i is Loan @ i here: a
+-- definition typed I -> Type 0 is refused (rule R9, a Pi over the interval), a path in Type 0 is not.
+def Loan : Path (Type 0) PublicFace PrivateFace := fun (i : I) => zkLoanPath @ ~i
+-- zkPrivateLoan c is Sg c with the binder typed by Loan @ i1. The design name PrivateLoan is a signature
+-- name the kernel keeps (REFUSE_SIG), as zkEquiv became zkFaceEquiv. (unglue x).1 of PLAN 211 is
+-- commit' x: at the true key unglue is the branch equivalence forward, and witness (forward x) = commit' x.
+def zkPrivateLoan : Commitment -> Type 0 := fun (c : Commitment) => Sigma (x : Loan @ i1) (Path Commitment (commit' x) c)
+-- One private loan per commitment: zkPrivateLoan c converts to Sg c, so isPropSg carries over.
+def isPropZkPrivateLoan : (c : Commitment) -> isProp (zkPrivateLoan c) := fun (c : Commitment) => isPropSg c
+-- The closed opening (7, 11) along Loan: the transport from i1 to i0 is the ua transport, which computes to forward.
+def zkLoanKA : PublicFace := transp (fun (j : I) => Loan @ ~j) i0 (quot Opening R openKA)
+-- The transport back, from i0 to i1, lands in PrivateFace.
+def zkLoanBackKA : PrivateFace := transp (fun (j : I) => Loan @ j) i0 zkForwardKA
+-- The holder's representative private loan at the closed opening: commit' (quot Opening R openKA) computes
+-- to commit openKA, so refl fits. The pack is its own def: a term has no type ascription in this syntax.
+def zkPrivateLoanPt : zkPrivateLoan (commit openKA) := pack (quot Opening R openKA) refl
+def zkPrivateLoanKA : PrivateFace := witness zkPrivateLoanPt

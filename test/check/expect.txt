@@ -184,3 +184,6 @@ zk-guest-word.lang REFUSE_KIT
 amend-end.lang PATH_END
 zk-forward-witness.lang PATH_END
 zk-backward-point.lang TYPE_MISMATCH
+zk-private-loan-name.lang REFUSE_SIG
+zk-loan-unglue.lang UNGLUE_TYPE
+zk-private-loan-point.lang PATH_END

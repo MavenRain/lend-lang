@@ -93,3 +93,6 @@ elim-path-case.lang
 zk-redefine.lang
 zk-forward-witness.lang
 zk-backward-point.lang
+zk-private-loan-name.lang
+zk-loan-unglue.lang
+zk-private-loan-point.lang

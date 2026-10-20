@@ -1,0 +1,16 @@
+-- The design name PrivateLoan (S10 Part 1). PrivateLoan is a defined design-signature name, so a guest
+-- definition of it is refused: only the kernel gives it (the zkEquiv wall of S9 Part 5 again). The guest
+-- definition in examples/zk.lang is zkPrivateLoan. isSetCommitment and commit' are the examples/zk.lang
+-- definitions. A kit row: U256 is a kit item, so posWord exists in kit mode only (test/check/kit.txt).
+def Position : Type 0 := U256
+def posWord : Position -> U256 := fun (p : Position) => p
+
+def isSetCommitment : isSet Commitment :=
+  fun (x : Commitment) (y : Commitment) (p : Path Commitment x y) (q : Path Commitment x y) =>
+    fun (i : I) => fun (j : I) => squash0 (Prod U256 U256) x y p q i j
+def commit' : PrivateFace -> Commitment := fun (z : PrivateFace) => fold
+  (fun (o : Opening) => commit o)
+  (fun (a : Opening) (b : Opening) (r : R a b) => fun (i : I) => r @ i)
+  (fun (x : Commitment) (y : Commitment) (p : Path Commitment x y) (q : Path Commitment x y) => fun (i : I) => fun (j : I) => isSetCommitment x y p q @ i @ j)
+  z
+def PrivateLoan : Commitment -> Type 0 := fun (c : Commitment) => Sigma (z : PrivateFace) (Path Commitment (commit' z) c)

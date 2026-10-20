@@ -211,6 +211,16 @@ Loan i       := Glue PublicFace [i = i1 ↦ (PrivateFace, zkEquiv)]
 PrivateLoan c := Σ (x : Loan i1), Path Commitment (unglue x).1 c
 ```
 
+S10 Part 1 (2026-10-20): the guest spelling in examples/zk.lang is
+`Loan : Path (Type 0) PublicFace PrivateFace := fun (i : I) => zkLoanPath
+@ ~i` (a definition typed `I -> Type 0` is refused by rule R9, so `Loan i`
+is `Loan @ i`), and `(unglue x).1` is `commit' x`: `Loan @ i1` reduces to
+PrivateFace by the true-key rule, so `unglue` at that type is UNGLUE_TYPE;
+at the true key `unglue` is the branch equivalence `forward`, whose first
+component is `commit' x`. The guest name is `zkPrivateLoan`: `PrivateLoan`
+stays a kernel-given signature name (REFUSE_SIG), as `zkEquiv` became
+`zkFaceEquiv`.
+
 zkEquiv needs no cryptographic assumption, so transport along `Loan`
 computes. The holder keeps a representative opening. The contract sees
 only the public face.
@@ -274,7 +284,7 @@ for each build), the counts in docs/STATUS.md, and a USER commit.
 | S7 | DAO prelude: Obj, act, ChoiceRule, Aggregation, Gov, IsFixedPointObj, Config, amendPath; LendingLedger over Membership by ua: DONE 2026-10-18, without amendPath (O27) | a non-invariant constitution, a wrong unit, an exit that does not forfeit, the ∃ of IsSelfConstituting as a Prop |
 | S8 | port orbit-lang B1 676c7a8 (dependent elim for domain families) and B2 eafa1df (outcomeSet and menu slots, lend names, separate splice); O27 option (b) probe, then amendPath if it clears; law 2 uniqueness (USER ruling S8): DONE 2026-10-18, the guest term is amendExit (amendPath stays reserved) | the orbit-lang B1 rows (elim-*); the B2 rows with lend names (outcome-set-type, menu-type, dao-no-set, dao-redefine); amendPath rows if O27 (b) clears |
 | S9 | ZK ledger: Pedersen on BN254 in C, Sigma-protocol verifier lowering, zkEquiv, PrivateLoan, borrow, repay, liquidate (moved from S8, USER ruling S8) | known-answer vectors; mutants: wrong opening, range overflow, non-member step, step on a Forfeited position, point not on the curve |
-| S10 | contract end to end: deploy, vote, amend, borrow, repay, liquidate; host and EVM differential; gas table; chain probe | differential rows, revert rows, EIP-170 and EIP-3860 size limits |
+| S10 | contract end to end: deploy, vote, amend, borrow, repay, liquidate; host and EVM differential; gas table; chain probe | differential rows, revert rows, EIP-170 and EIP-3860 size limits; Part 1 Loan and zkPrivateLoan DONE 2026-10-20 |
 | S11 | regimes (optional, O23), docs, final gate | regime rows |
 
 Builder call (S2, 2026-10-17): the port of orbit-lang 7734007. Identity
@@ -1019,7 +1029,9 @@ has options, (a) is the ruling. O20 is a USER ruling from the request.
   vectors only (orbit-lang O11 style). RULED S9 (2026-10-19): (a), with
   Commitment := Trunc0 (Prod U256 U256) on the guest side and quotient
   effectiveness as a guest theorem (section 8, S9 Part 5); (b) is the
-  fallback if Part 5 does not clear.
+  fallback if Part 5 does not clear. S10 Part 1 (2026-10-20): the guest
+  definition is zkPrivateLoan; the signature name PrivateLoan stays
+  reserved to the kernel (REFUSE_SIG), as zkEquiv became zkFaceEquiv.
 - O15 Proof system: (a) Sigma protocols with bit-decomposition range
   proofs (0x06, 0x07). (b) Groth16 through 0x08 with fixture proofs and an
   out-of-tree prover. (c) Bulletproofs (short proofs, high verify gas).
