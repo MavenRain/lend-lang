@@ -191,3 +191,7 @@ zk-repay-name.lang REFUSE_SIG
 zk-liquidate-name.lang REFUSE_SIG
 zk-liquidate-member.lang TYPE_MISMATCH
 zk-repay-nat.lang TYPE_MISMATCH
+regime-para-wrong.lang PATH_END
+regime-fork-wrong.lang PATH_END
+beta-critical.lang PATH_END
+noselfcon-wrong.lang TYPE_MISMATCH

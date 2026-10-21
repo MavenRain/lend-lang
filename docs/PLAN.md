@@ -602,7 +602,7 @@ for each build), the counts in docs/STATUS.md, and a USER commit.
 | S10 | contract end to end: deploy, vote, amend, borrow, repay, liquidate; host and EVM differential; gas table; chain probe | differential rows, revert rows, EIP-170 and EIP-3860 size limits; Part 1 Loan and zkPrivateLoan DONE 2026-10-20; Part 2 pure ledger borrow, repay, liquidate DONE 2026-10-20; Part 3 differential, gas table, EIP rows DONE 2026-10-20; Part 4 ledger/contract integration DONE 2026-10-20; Part 5 governed admit DONE 2026-10-20; S10 CLOSED 2026-10-20: the S10 form of vote and amend (section 7); the governed exit and the terms menu move to S11, O12 (a) to S12, the chain probe to a USER step (O22) |
 | S11 | governance (added at the S10 close, USER ruling 2026-10-20): the governed exit (a poll kind, admit or exit), then the terms menu (`Gov L`) and the O17 window after a terms change | exit poll rows (the zkDepart state change on cand, an exit poll on a non-member), the bar effect of an exit during a poll (VALIDATION, S10 close), the 8 S10 gas rows kept or ruled, a liquidate inside the window; Part 1 governed exit DONE 2026-10-20 (kind at slot 15, zkProposeExit, the zkAmend exit branch, an exit withdraws the vote of the open poll); Part 2 terms menu DONE 2026-10-20 (form B: terms and chg at slots 16 and 17, zkProposeTerms and zkTerms, the zkAmend terms branch, the menu deadline in zkBorrow, the O17 window in zkLiquidate) |
 | S12 | O12 (a) (added at the S10 close): bLSAG ring votes over stored member keys (O19 (b)) | a vote by a key outside the ring, a reused key image, the zkVote gas row as a function of nmem; DONE 2026-10-21 (rulings Q-S12-1 to Q-S12-7 (a), D1 to D3 (a), K = 4): zkKey (the member, curve, zero key, second key and fifth key guards), the ring zkVote in Form A (G1, G2, G3 for nkeys 1 to 4), the deploy tag in m (finding 4), ix != 0, the key removal at zkDepart, the zkAmend bar on nmem0 (Q-S12-3 (a)) |
-| S13 | regimes (optional, O23), docs, final gate (S11 until the S10 close) | regime rows |
+| S13 | regimes (optional, O23), docs, final gate (S11 until the S10 close) | regime rows; DONE 2026-10-21 (rulings Q-S13-0 to Q-S13-5 (a)): examples/regimes.lang (the port of orbit-lang S10 B1 with the lend names: the guest `aggregate` by elim on Orbit, regimeOf, the laws paraLaw, forkLaw and noneLaw by refl, Not, exfalso, noSelfCon), the Empty family in domain/domain.lang (Q-S13-3 (a)), 4 check rows (regime-para-wrong, regime-fork-wrong, beta-critical, noselfcon-wrong), 6 eval rows (the regime at beta 1/1, 2/1, 1/2 and of the cycle menu, betaGt at 2/1 and 1/1); MR1 to MR6 KILLED; gate 1 (the port) and gate 2 (the port and the docs) `make check` rc 0 (examples 38, check refusals 197, evals 196, zk chain 294 steps); the docs: STATUS S11 to S13, O23, VALIDATION S13 |
 
 Builder call (S2, 2026-10-17): the port of orbit-lang 7734007. Identity
 check: on d4fdb2e, the trees src, test, domain, examples, Makefile,
@@ -1401,10 +1401,16 @@ has options, (a) is the ruling. O20 is a USER ruling from the request.
   0x6160006000f3 returns 24576 bytes, expect ok; 0x6160016000f3 returns
   24577 bytes, expect an error). No result is recorded yet; O22 stays
   open until the USER runs it on Telcoin Network.
-- O23 Regimes: the design says amendments inherit the three UAT regimes.
-  Default: the orbit-lang O8 and O9 reading (a three-point coproduct the
-  compiler computes from the menu), at S13 (S11 until the S10 close; the
-  S11 terms menu comes first).
+- O23 Regimes (RULED (a), USER 2026-10-21): the design says amendments
+  inherit the three UAT regimes. Default: the orbit-lang O8 and O9
+  reading (a three-point coproduct the compiler computes from the menu),
+  at S13 (S11 until the S10 close; the S11 terms menu comes first). Lend
+  reading (S13, Q-S13-1 (a)): the guest term `aggregate` (elim on Orbit)
+  gives the outcome of a constitution at a tally, and `regimeOf` counts
+  the self constituting phases of a menu at that tally (AI none, AD one,
+  SI more than one). Thus the regime is per tally. The guest checker and
+  evaluator compute it; no compiler pass does (examples/regimes.lang,
+  docs/STATUS.md S13).
 - O24 Scope of the claim: lend-lang proves the laws on the discrete
   quotient reading (U/Characterization.lean:81). Hiding, binding, soundness
   and zero knowledge are assumptions in docs/VALIDATION.md.

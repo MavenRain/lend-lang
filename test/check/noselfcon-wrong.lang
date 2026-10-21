@@ -1,0 +1,12 @@
+-- No self constitution (S13, Q-S13-2 (a), orbit-lang S10 B1): the second part of p is IsSelfConstituting F L, not an
+-- aggregation, so e (payload p) does not check. The slots are those of the orbit-lang file, with the lend names.
+def Agent : Type 0 := Sum Unit Unit
+def Choice : Type 0 := Sum Unit Unit
+def D : Type 0 := Trunc0 Choice
+def G : Type 0 := Sum Unit Unit
+def flip : Choice -> Choice := fun (c : Choice) => either (fun (u : Unit) => inr unit) (fun (u : Unit) => inl unit) c
+def actChoice : G -> Choice -> Choice := fun (g : G) (c : Choice) => either (fun (u : Unit) => c) (fun (u : Unit) => flip c) g
+def outcomeSet : isSet D := fun (x : D) (y : D) (p : Path D x y) (q : Path D x y) => fun (i : I) => fun (j : I) => squash0 Choice x y p q i j
+def Not : Type 0 -> Type 0 := fun (X : Type 0) => X -> Empty
+def noSelfConWrong : (F : ChoiceRule Obj D) -> Not (Aggregation F) -> Not (Sigma (L : Aggregation F) (IsSelfConstituting F L)) :=
+  fun (F : ChoiceRule Obj D) (e : Not (Aggregation F)) (p : Sigma (L : Aggregation F) (IsSelfConstituting F L)) => e (payload p)

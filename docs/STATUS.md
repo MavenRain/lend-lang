@@ -9,6 +9,13 @@
 > F15), the core type or the core operation.
 
 - <feature>.
+- The regimes (S13, O23 (a)): examples/regimes.lang. The guest term
+  `aggregate` (elim on Orbit) gives the outcome of a constitution at a
+  tally. `regimeOf` counts the self constituting phases of a menu at a
+  tally: AI (none), AD (one) or SI (more than one). The laws paraLaw,
+  forkLaw and noneLaw hold by refl. The Empty family
+  (domain/domain.lang) gives Not and exfalso, and noSelfCon (no self
+  constitution without an aggregation).
 
 ## Remaining M0 work
 
@@ -23,6 +30,14 @@
 > (a fuel budget, a host limit, a stack size).
 
 - <limit>.
+- The regimes are guest terms. The checker and `langc eval` read
+  examples/regimes.lang (guest mode: examples/kit.txt has no line for
+  it). No build, lower or contract step uses a regime. The example has
+  2 agents, 3 phases and fixed menus (beta 1/1, 2/1, 1/2 and the cycle).
+  Cause: the S13 scope (Q-S13-1 (a): a guest `aggregate` by elim on
+  Orbit).
+- Empty has one constructor (emptyLoop) and no base case, not zero
+  constructors. Cause: the parser needs a constructor in a family.
 
 ## Internal boundaries
 
@@ -1009,3 +1024,168 @@ only).
 |---|---|---|
 | Parts 1 to 5 | see the part records | S10-p1-record.md to S10-p5-record.md |
 | close brief and close (sessions 11 and 12) | main loop | by hand, no builder call |
+
+## S11
+
+S11 adds the governance that the S10 close moved out of S10 (USER
+ruling 2026-10-20). Part 1 adds the governed exit: a poll kind (admit
+or exit) at slot 15, zkProposeExit and the zkAmend exit branch. An exit
+withdraws the vote of the open poll. Part 2 adds the terms menu (form
+B): terms and chg at slots 16 and 17, zkProposeTerms and zkTerms, the
+zkAmend terms branch, the menu deadline in zkBorrow and the O17 window
+in zkLiquidate. S11 does not add voter anonymity (O12 (a) is S12). The
+S11 paragraphs of docs/VALIDATION.md give the rows and the gas table.
+
+### Counts
+
+| Gate line | S10 close c8d8afd | Part 1 = 0c64d36 | Part 2 = f955b71 |
+|---|---|---|---|
+| evals | 183 | 183 | 183 |
+| zk chain steps | 114 | 192 | 249 |
+
+The other lines are equal in all columns: examples 37, parse refusals
+19, check refusals 193, kit-only refusals 24, runs 6, run refusals 10,
+asmtool 8, builds 4, lower refusals 16, build checks 36, dispatch 20,
+evm steps 43, precompile 24, mock 13, emit 27, zk 33, diff rows 16. The
+c8d8afd column is the S10 Part 5 column (the close is docs only). The
+Part 1 column is ~/Documents/lend-lang-work/S11-p1-gate.log. No gate
+log of the Part 2 tree is in lend-lang-work: the Part 2 zk chain count
+is from docs/VALIDATION.md (192 to 249 steps), and the other lines are
+from S12-s2-gate1.log, the first S12 gate, which has no S12 row yet
+(h).
+
+### Parts
+
+| Part | Scope | Session, record | Staged tree | USER commit (tree) |
+|---|---|---|---|---|
+| 1 | governed exit | 1 and 2, S11-p1-brief.md, S11-p1-gate.log, S11-p1-mutants.log | 7963e1fa | 0c64d36 (7963e1fa, equal; the subject is reworded) |
+| 2 | terms menu, O17 window | 3 and 4, S11-p2-brief.md, S11-p2-probe-s3, S11-p2-mut-s4 | 48d72d34 | f955b71 (a15992ad, differs: docs/PLAN.md, docs/VALIDATION.md, examples/zk.lang, +9/-5) |
+
+The records are in ~/Documents/lend-lang-work. S11 has no record file:
+the briefs, the gate log and the mutant logs are the record.
+
+### Mutants
+
+15 of 15 KILLED, on the staged trees: Part 1 7 of 7
+(S11-p1-mutants.log; a REFUSE_REC kills M6, and 12 zk chain failures
+kill its variant M6b), Part 2 8 of 8 (S11-p2-mut-s4). The USER delta of
+Part 2 has no mutant record.
+
+### Builders
+
+| Stage | Tier | Result |
+|---|---|---|
+| Parts 1 and 2 | no builder record | S11-p1-brief.md, S11-p2-brief.md |
+
+## S12
+
+S12 adds the ring vote of O12 (a) in Form A (rulings Q-S12-1 to
+Q-S12-7 (a), D1 to D3 (a), K = 4): zkKey stores the key of a member,
+zkVote checks a bLSAG ring signature over the stored keys, zkDepart
+removes the key of the sender, and the zkAmend bar uses nmem0 (Q-S12-3
+(a)). The USER commit 59bb780 adds two items to the staged tree: the
+explicit deployment domain (zkDomain, set once by the founder, with its
+setup guards and replay rows) and the shared conditional words. The S12
+paragraph of docs/VALIDATION.md gives the rows, the gas table and the
+sizes.
+
+### Counts
+
+| Gate line | S11 = f955b71 | staged 7e86f50f | USER commit 59bb780 |
+|---|---|---|---|
+| evals | 183 | 184 | 190 |
+| zk chain steps | 249 | 278 | 294 |
+
+The other lines are equal in all columns: examples 37, parse refusals
+19, check refusals 193, kit-only refusals 24, runs 6, run refusals 10,
+asmtool 8, builds 4, lower refusals 16, build checks 36, dispatch 20,
+evm steps 43, precompile 24, mock 13, emit 27, zk 33, diff rows 16. The
+f955b71 column is S12-s2-gate1.log. The 7e86f50f column is
+S12-s8-gate.log. The 59bb780 column uses the counts of the commit
+message (190 evals, 294 chain steps), not the staged counts. No gate
+log of 59bb780 is in lend-lang-work, thus its other lines are (h). The
+S13 gate 1 agrees: it has the 59bb780 counts plus the S13 rows.
+
+### Parts
+
+| Part | Scope | Session, record | Staged tree | USER commit (tree) |
+|---|---|---|---|---|
+| 1 | ring vote: zkKey, zkVote Form A, the key removal, the nmem0 bar | 1 to 8, S12-brief.md, S12-s2-HANDOFF.md to S12-s8-HANDOFF.md | 7e86f50f | 59bb780 (5cf02c7f, differs: +deployment domain, +shared conditional words; 8 files, +176/-83) |
+
+### Mutants
+
+8 of 8 KILLED, on the staged tree before the domain review fix: M1 to
+M8 (S12-mut-s3; the S12 paragraph of docs/VALIDATION.md gives the
+killer of each). M7 (ix != 0) is equivalent on chain states; the
+white-box eval row forgeVoteO and the 4 zk.sh zkVote gas rows kill it.
+The USER delta has no mutant record. Six host eval regressions and the
+setup and replay rows of the zk chain check it.
+
+### Builders
+
+| Stage | Tier | Result |
+|---|---|---|
+| sessions 1 to 8 | no builder record | runners in S12-s3-runners to S12-s8-runners |
+
+## S13
+
+S13 closes the plan: the regimes of O23 (ruling (a), USER 2026-10-21),
+the docs and the final gate. The regimes are the port of orbit-lang S10
+B1 with the lend names (O25: lend-lang does not change orbit-lang):
+examples/regimes.lang (guest mode), the Empty family in
+domain/domain.lang, 4 check rows and 6 eval rows. The Q-S13-1 (a)
+probe passed: the guest `aggregate` by elim on Orbit checks, and the
+laws paraLaw, forkLaw and noneLaw hold by refl. No fold form was
+necessary. The docs part adds `## S11` to `## S13` here, the regimes in
+`## Implemented` and `## Known limits`, the S13 row of PLAN section 8,
+the O23 ruling and the S13 paragraph of docs/VALIDATION.md. S13 adds no
+contract code. The chain probe stays a USER step (O22).
+
+### Counts
+
+| Gate line | S12 = 59bb780 | port, gate 1 | port and docs, gate 2 |
+|---|---|---|---|
+| examples | 37 | 38 | 38 |
+| check refusals | 193 | 197 | 197 |
+| evals | 190 | 196 | 196 |
+
+The other lines are equal in all columns: parse refusals 19, kit-only
+refusals 24, runs 6, run refusals 10, asmtool 8, builds 4, lower
+refusals 16, build checks 36, dispatch 20, evm steps 43, precompile 24,
+zk chain steps 294, mock 13, emit 27, zk 33, diff rows 16. Gate 1 is
+~/Documents/lend-lang-work/S13-gate1.log (753 s); gate 2 is
+S13-gate2.log. The port changes no test file outside test/check and
+test/eval, thus the other lines of the 59bb780 column are (h).
+
+### Parts
+
+| Part | Scope | Session, record | Staged tree | USER commit (tree) |
+|---|---|---|---|---|
+| port | Empty, examples/regimes.lang, 4 check rows, 6 eval rows | 1 (brief: S13-brief.md, S13-s1-HANDOFF.md) and 2 (probe, port, mutants, gate 1: S13-s2-HANDOFF.md) | bfb92e9b | with the docs |
+| docs | STATUS S11 to S13, Implemented, Known limits, PLAN S13 row and O23, VALIDATION S13 | 3, S13-s3-HANDOFF.md | the final tree (S13-s3-HANDOFF.md) | not made yet |
+
+### Mutants
+
+6 of 6 KILLED, on the port tree (session 2). Each mutant also fails the
+first 6 eval rows, because `langc eval` checks the whole file first.
+
+| Mutant | Site | Change | First failed line (killer) |
+|---|---|---|---|
+| MR1 | `bump` | the first fixed point gives SI, not AD | examples gate, `paraLaw` PATH_END |
+| MR2 | `betaGt` | the zero case gives inl unit | examples gate, `paraLaw` PATH_END |
+| MR3 | `isFix` | compares to phaseZero, not o | examples gate, `paraLaw` PATH_END |
+| MR4 | `nextPhase` | phaseMinus selects itself | examples gate, `noneLaw` PATH_END |
+| MR5 | `Empty` (domain/domain.lang) | a base constructor `emptyBase` | examples gate, `exfalso` TYPE_MISMATCH |
+| MR6 | `aggregate`, quot case | phaseZero, not `witness F x` | examples gate, `aggregate` TYPE_MISMATCH |
+
+The S13 brief expected `forkLaw` PATH_END for MR6. The real killer is
+the elim check of `aggregate`: the ends of the quotEq case are not
+phaseZero. The docs part runs no mutant (docs only).
+
+### Builders
+
+| Stage | Tier | Result |
+|---|---|---|
+| sessions 1 and 2 (brief, probe, port, mutants, gate 1) | main loop | by hand, runners in S13-s1-runners and S13-s2-runners |
+| STATUS S11 and S12 (session 3) | wf-builder at fable xhigh, then one opus xhigh re-run | both stopped (a rate limit, then a classifier stop); main loop by hand |
+| the other docs (session 3) | main loop | by hand, no builder call |

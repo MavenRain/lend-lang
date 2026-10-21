@@ -635,6 +635,35 @@ remaining gas on the create path, so the deploy gas is 30,000,000 -
 25,594,311 = 4,405,689: 21120 x 200 for the code deposit plus 181,689 for
 the constructor and the rest (+113,314).
 
+S13 (2026-10-21) adds the regimes of O23 (ruling (a)) as a guest
+example: the port of orbit-lang S10 B1 with the lend names (rulings
+Q-S13-0 to Q-S13-5 (a)). examples/regimes.lang has a 2 agent DAO whose
+outcome is one of 3 phases. The guest term `aggregate F t` (elim on
+Orbit) gives the outcome of the constitution F at the tally t: the quot
+case is the rule of F, the quotEq case is the invariance of F, and the
+quotSquash case is outcomeSet. `regimeOf M t` counts the self
+constituting phases of the menu M at t: AI (none), AD (one) or SI (more
+than one). The laws paraLaw (beta 1/1 gives AD), forkLaw (beta 2/1
+gives SI) and noneLaw (the cycle menu gives AI) hold by refl at each
+tally orbitProj x. domain/domain.lang gets the Empty family (Q-S13-3
+(a)), and the example gets Not, exfalso and noSelfCon (no self
+constitution without an aggregation, Q-S13-2 (a)). The rows: 1 example,
+4 check refusals (regime-para-wrong and regime-fork-wrong PATH_END for
+a wrong law, beta-critical PATH_END for beta 1/1 read as above 1,
+noselfcon-wrong TYPE_MISMATCH) and 6 eval rows (regimeAt11 AD,
+regimeAt21 SI, regimeAt12 AD, regimeCycle AI, beta21 inl unit, beta11
+inr unit). The 6 mutants MR1 to MR6 were all killed, each by the
+examples gate: MR1 (`bump`), MR2 (`betaGt`) and MR3 (`isFix`) by the
+paraLaw PATH_END, MR4 (`nextPhase`) by the noneLaw PATH_END, MR5 (a
+base constructor in Empty) by the exfalso TYPE_MISMATCH and MR6 (the
+quot case of `aggregate`) by the elim check of `aggregate`
+(TYPE_MISMATCH). Each mutant also fails the first 6 eval rows, because
+`langc eval` checks the whole file first. Gate 1 (the port) and gate 2
+(the port and the docs) run `make check` with rc 0: examples 38, parse
+refusals 19, check refusals 197, kit-only refusals 24, evals 196, zk
+chain 294 steps, and 0 failures in each sub-gate. The port changes no
+contract source, and the zk chain gate passes with the S12 gas rows.
+
 Staged review (2026-10-19) reproduced and fixed three defects:
 
 - HIGH: Schnorr and bit provers reused the same deterministic nonce for
