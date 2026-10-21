@@ -84,9 +84,11 @@ def commitBad : Nat -> Flag := fun (n : Nat) => u256Eq (first (ecAdd (pair 1u 1u
 -- scalars: the range proof is a chain of 32 zkRangeBit steps over the Horner accumulator (accx, accy) and the
 -- bit count (Part 4): zkBorrow starts the phase, zkRangeDone closes it when the accumulator is the commitment.
 -- The poll words (S10 Part 5, S11 Part 1): poll, cand, ayes, nays, nmem, voted and kind (slot 15: 0 admit, 1 exit).
-state State := makeState (members : Map Addr Flag) (status : Map Addr Nat) (cx : Map Addr U256) (cy : Map Addr U256) (deadline : Map Addr Nat) (accx : Map Addr U256) (accy : Map Addr U256) (bits : Map Addr Nat) (ranged : Map Addr Flag) (poll : Nat) (cand : Addr) (ayes : Nat) (nays : Nat) (nmem : Nat) (voted : Map Addr Nat) (kind : Nat)
+-- The terms words (S11 Part 2): kind 2 + i is a terms poll on the menu entry i, terms (slot 16) is the menu
+-- index of the current terms, and chg (slot 17) is the time of the last terms change (0 at deploy).
+state State := makeState (members : Map Addr Flag) (status : Map Addr Nat) (cx : Map Addr U256) (cy : Map Addr U256) (deadline : Map Addr Nat) (accx : Map Addr U256) (accy : Map Addr U256) (bits : Map Addr Nat) (ranged : Map Addr Flag) (poll : Nat) (cand : Addr) (ayes : Nat) (nays : Nat) (nmem : Nat) (voted : Map Addr Nat) (kind : Nat) (terms : Nat) (chg : Nat)
 -- S10 Part 5: aa is the founder, the first member (Active, nmem 1). No poll is open.
-def init : State := makeState (mapSet mapEmpty 0x00000000000000000000000000000000000000aa flagYes) (mapSet mapEmpty 0x00000000000000000000000000000000000000aa 1) mapEmpty mapEmpty mapEmpty mapEmpty mapEmpty mapEmpty mapEmpty 0 0x0000000000000000000000000000000000000000 0 0 1 mapEmpty 0
+def init : State := makeState (mapSet mapEmpty 0x00000000000000000000000000000000000000aa flagYes) (mapSet mapEmpty 0x00000000000000000000000000000000000000aa 1) mapEmpty mapEmpty mapEmpty mapEmpty mapEmpty mapEmpty mapEmpty 0 0x0000000000000000000000000000000000000000 0 0 1 mapEmpty 0 0 0
 def zkGrace : Nat := 7
 
 -- View: a is a member and its position is Active.
@@ -125,7 +127,7 @@ def zkPropose : (env : Env) -> (s : State) -> (a : Addr) -> Option (Prod State (
         (flagIf (mapGet (members s) a) none
           (flagIf (zkAnd (natEq (mapGet (status s) a) 2) (natLe 1 (mapGet (deadline s) a)))
             none
-            (some (pair (makeState (members s) (status s) (cx s) (cy s) (deadline s) (accx s) (accy s) (bits s) (ranged s) (poll s) a (ayes s) (nays s) (nmem s) (voted s) (kind s)) nil)))))
+            (some (pair (makeState (members s) (status s) (cx s) (cy s) (deadline s) (accx s) (accy s) (bits s) (ranged s) (poll s) a (ayes s) (nays s) (nmem s) (voted s) (kind s) (terms s) (chg s)) nil)))))
       none
 
 -- Entry: the caller exits (exitOne): not a member, Forfeited, nmem - 1. A non-member reverts. Only the caller
@@ -135,16 +137,17 @@ def zkPropose : (env : Env) -> (s : State) -> (a : Addr) -> Option (Prod State (
 def zkDepart : (env : Env) -> (s : State) -> Option (Prod State (List Out)) :=
   fun (env : Env) (s : State) =>
     flagIf (mapGet (members s) (caller env))
-      (some (pair (makeState (mapSet (members s) (caller env) flagNo) (mapSet (status s) (caller env) 2) (cx s) (cy s) (deadline s) (accx s) (accy s) (bits s) (ranged s) (poll s) (cand s) (natSub (ayes s) (flagIf (natEq (mapGet (voted s) (caller env)) (natAdd (natAdd (poll s) (poll s)) 2)) 1 0)) (natSub (nays s) (flagIf (natEq (mapGet (voted s) (caller env)) (natAdd (natAdd (poll s) (poll s)) 1)) 1 0)) (natSub (nmem s) 1) (voted s) (kind s)) nil))
+      (some (pair (makeState (mapSet (members s) (caller env) flagNo) (mapSet (status s) (caller env) 2) (cx s) (cy s) (deadline s) (accx s) (accy s) (bits s) (ranged s) (poll s) (cand s) (natSub (ayes s) (flagIf (natEq (mapGet (voted s) (caller env)) (natAdd (natAdd (poll s) (poll s)) 2)) 1 0)) (natSub (nays s) (flagIf (natEq (mapGet (voted s) (caller env)) (natAdd (natAdd (poll s) (poll s)) 1)) 1 0)) (natSub (nmem s) 1) (voted s) (kind s) (terms s) (chg s)) nil))
       none
 
 -- Entry: the caller is a member and Active: the commitment moves by the public delta d with the blinding r
 -- to c (+) commitWords (pair d r) (zkShift, the zkBorrowL step of the ledger), and the deadline is
--- now + zkGrace. From the identity (0, 0), zkBorrow 7u 11u stores cKA. Else revert.
+-- now + the grace of the current menu entry (S11 Part 2: entry 0 is zkGrace (7), entry 1 is 14, entry 2 is 3).
+-- From the identity (0, 0), zkBorrow 7u 11u stores cKA. Else revert.
 def zkBorrow : (env : Env) -> (s : State) -> (d : U256) -> (r : U256) -> Option (Prod State (List Out)) :=
   fun (env : Env) (s : State) (d : U256) (r : U256) =>
     flagIf (zkPosActive env s (caller env))
-      (some (pair (makeState (members s) (status s) (mapSet (cx s) (caller env) (first (zkShift s (caller env) d r))) (mapSet (cy s) (caller env) (second (zkShift s (caller env) d r))) (mapSet (deadline s) (caller env) (natAdd (now env) zkGrace)) (mapSet (accx s) (caller env) 0u) (mapSet (accy s) (caller env) 0u) (mapSet (bits s) (caller env) 0) (mapSet (ranged s) (caller env) flagNo) (poll s) (cand s) (ayes s) (nays s) (nmem s) (voted s) (kind s)) nil))
+      (some (pair (makeState (members s) (status s) (mapSet (cx s) (caller env) (first (zkShift s (caller env) d r))) (mapSet (cy s) (caller env) (second (zkShift s (caller env) d r))) (mapSet (deadline s) (caller env) (natAdd (now env) ((fun (i : Nat) => flagIf (natEq i 1) 14 (flagIf (natEq i 2) 3 zkGrace)) (terms s)))) (mapSet (accx s) (caller env) 0u) (mapSet (accy s) (caller env) 0u) (mapSet (bits s) (caller env) 0) (mapSet (ranged s) (caller env) flagNo) (poll s) (cand s) (ayes s) (nays s) (nmem s) (voted s) (kind s) (terms s) (chg s)) nil))
       none
 
 -- Entry: the same test; the commitment moves back by d to c (-) commitWords (pair d r), computed as
@@ -157,16 +160,18 @@ def zkRepay : (env : Env) -> (s : State) -> (d : U256) -> (r : U256) -> Option (
   fun (env : Env) (s : State) (d : U256) (r : U256) =>
     flagIf (zkPosActive env s (caller env))
       (some (pair
-        ((fun (c : Prod U256 U256) => makeState (members s) (status s) (mapSet (cx s) (caller env) (first c)) (mapSet (cy s) (caller env) (second c)) (mapSet (deadline s) (caller env) (zkRepayDeadline c (mapGet (deadline s) (caller env)))) (mapSet (accx s) (caller env) 0u) (mapSet (accy s) (caller env) 0u) (mapSet (bits s) (caller env) 0) (mapSet (ranged s) (caller env) flagNo) (poll s) (cand s) (ayes s) (nays s) (nmem s) (voted s) (kind s))
+        ((fun (c : Prod U256 U256) => makeState (members s) (status s) (mapSet (cx s) (caller env) (first c)) (mapSet (cy s) (caller env) (second c)) (mapSet (deadline s) (caller env) (zkRepayDeadline c (mapGet (deadline s) (caller env)))) (mapSet (accx s) (caller env) 0u) (mapSet (accy s) (caller env) 0u) (mapSet (bits s) (caller env) 0) (mapSet (ranged s) (caller env) flagNo) (poll s) (cand s) (ayes s) (nays s) (nmem s) (voted s) (kind s) (terms s) (chg s))
           (zkShift s (caller env) (zkNegScalar d) (zkNegScalar r)))
         nil))
       none
 
 -- Entry: a is a member and Active with a deadline, and now is past the deadline (O17): Forfeited. Else revert.
+-- The O17 window (S11 Part 2): now must also be past chg + zkGrace, thus no liquidation for zkGrace time units
+-- after a terms change. A deadline that is set before the change does not end the window.
 def zkLiquidate : (env : Env) -> (s : State) -> (a : Addr) -> Option (Prod State (List Out)) :=
   fun (env : Env) (s : State) (a : Addr) =>
-    flagIf (zkAnd (zkPosActive env s a) (zkAnd (natLe 1 (mapGet (deadline s) a)) (natLe (natAdd (mapGet (deadline s) a) 1) (now env))))
-      (some (pair (makeState (members s) (mapSet (status s) a 2) (cx s) (cy s) (deadline s) (accx s) (accy s) (bits s) (ranged s) (poll s) (cand s) (ayes s) (nays s) (nmem s) (voted s) (kind s)) nil))
+    flagIf (zkAnd (zkPosActive env s a) (zkAnd (natLe 1 (mapGet (deadline s) a)) (zkAnd (natLe (natAdd (mapGet (deadline s) a) 1) (now env)) (natLe (natAdd (natAdd (chg s) zkGrace) 1) (now env)))))
+      (some (pair (makeState (members s) (mapSet (status s) a 2) (cx s) (cy s) (deadline s) (accx s) (accy s) (bits s) (ranged s) (poll s) (cand s) (ayes s) (nays s) (nmem s) (voted s) (kind s) (terms s) (chg s)) nil))
       none
 
 -- Entry (Part 4): one bit of the range proof of the caller's commitment. The caller is Active with fewer than
@@ -178,7 +183,7 @@ def zkRangeBit : (env : Env) -> (s : State) -> (cxi : U256) -> (cyi : U256) -> (
   fun (env : Env) (s : State) (cxi : U256) (cyi : U256) (a0x : U256) (a0y : U256) (a1x : U256) (a1y : U256) (e0 : U256) (e1 : U256) (s0 : U256) (s1 : U256) =>
     flagIf (zkAnd (zkPosActive env s (caller env)) (natLe (natAdd (mapGet (bits s) (caller env)) 1) 32))
       (flagIf (bitVerify (pair cxi cyi) (pair (pair (pair a0x a0y) (pair a1x a1y)) (pair (pair e0 e1) (pair s0 s1))))
-        (some (pair (makeState (members s) (status s) (cx s) (cy s) (deadline s) (mapSet (accx s) (caller env) (first (ecAdd (pair cxi cyi) (ecMul (pair (mapGet (accx s) (caller env)) (mapGet (accy s) (caller env))) 2u)))) (mapSet (accy s) (caller env) (second (ecAdd (pair cxi cyi) (ecMul (pair (mapGet (accx s) (caller env)) (mapGet (accy s) (caller env))) 2u)))) (mapSet (bits s) (caller env) (natAdd (mapGet (bits s) (caller env)) 1)) (ranged s) (poll s) (cand s) (ayes s) (nays s) (nmem s) (voted s) (kind s)) nil))
+        (some (pair (makeState (members s) (status s) (cx s) (cy s) (deadline s) (mapSet (accx s) (caller env) (first (ecAdd (pair cxi cyi) (ecMul (pair (mapGet (accx s) (caller env)) (mapGet (accy s) (caller env))) 2u)))) (mapSet (accy s) (caller env) (second (ecAdd (pair cxi cyi) (ecMul (pair (mapGet (accx s) (caller env)) (mapGet (accy s) (caller env))) 2u)))) (mapSet (bits s) (caller env) (natAdd (mapGet (bits s) (caller env)) 1)) (ranged s) (poll s) (cand s) (ayes s) (nays s) (nmem s) (voted s) (kind s) (terms s) (chg s)) nil))
         none)
       none
 
@@ -188,7 +193,7 @@ def zkRangeBit : (env : Env) -> (s : State) -> (cxi : U256) -> (cyi : U256) -> (
 def zkRangeDone : (env : Env) -> (s : State) -> Option (Prod State (List Out)) :=
   fun (env : Env) (s : State) =>
     flagIf (zkAnd (zkPosActive env s (caller env)) (zkAnd (natEq (mapGet (bits s) (caller env)) 32) (zkAnd (u256Eq (mapGet (accx s) (caller env)) (mapGet (cx s) (caller env))) (u256Eq (mapGet (accy s) (caller env)) (mapGet (cy s) (caller env))))))
-      (some (pair (makeState (members s) (status s) (cx s) (cy s) (deadline s) (mapSet (accx s) (caller env) 0u) (mapSet (accy s) (caller env) 0u) (mapSet (bits s) (caller env) 0) (mapSet (ranged s) (caller env) flagYes) (poll s) (cand s) (ayes s) (nays s) (nmem s) (voted s) (kind s)) nil))
+      (some (pair (makeState (members s) (status s) (cx s) (cy s) (deadline s) (mapSet (accx s) (caller env) 0u) (mapSet (accy s) (caller env) 0u) (mapSet (bits s) (caller env) 0) (mapSet (ranged s) (caller env) flagYes) (poll s) (cand s) (ayes s) (nays s) (nmem s) (voted s) (kind s) (terms s) (chg s)) nil))
       none
 
 -- Views (Part 4): the known answers on the chain. The words are parameters, so the curve ops stay open and
@@ -210,30 +215,38 @@ def zkVote : (env : Env) -> (s : State) -> (c : Nat) -> Option (Prod State (List
     flagIf (zkAnd (mapGet (members s) (caller env)) (natLe c 1))
       (flagIf (addrEq (cand s) zkNoAddr) none
         (flagIf (natLe (natAdd (natAdd (poll s) (poll s)) 1) (mapGet (voted s) (caller env))) none
-          (some (pair (makeState (members s) (status s) (cx s) (cy s) (deadline s) (accx s) (accy s) (bits s) (ranged s) (poll s) (cand s) (natAdd (ayes s) c) (natAdd (nays s) (natSub 1 c)) (nmem s) (mapSet (voted s) (caller env) (natAdd (natAdd (poll s) (poll s)) (natAdd 1 c))) (kind s)) nil))))
+          (some (pair (makeState (members s) (status s) (cx s) (cy s) (deadline s) (accx s) (accy s) (bits s) (ranged s) (poll s) (cand s) (natAdd (ayes s) c) (natAdd (nays s) (natSub 1 c)) (nmem s) (mapSet (voted s) (caller env) (natAdd (natAdd (poll s) (poll s)) (natAdd 1 c))) (kind s) (terms s) (chg s)) nil))))
       none
 
 -- Entry: the amend of the open poll. An admit poll (kind 0): 2 ayes > nmem admits the candidate (admitOne:
 -- member, Active, nmem + 1); else 2 nays >= nmem rejects it; else revert. An exit poll (kind 1, S11 Part 1)
 -- has the same bars: 2 ayes > nmem expels the candidate (the zkDepart change: not a member, Forfeited,
 -- nmem - 1) if the candidate is a member. A candidate that exited during the poll is not a member: the amend
--- only closes the poll, so nmem does not drop two times. Each close: poll + 1, no candidate, the counts 0, kind 0.
+-- only closes the poll, so nmem does not drop two times. A terms poll (kind 2 + i, S11 Part 2) has the same
+-- bars: 2 ayes > nmem applies the menu entry i (terms i, chg now); 2 nays >= nmem rejects it (the terms do not
+-- change). Each close: poll + 1, no candidate, the counts 0, kind 0.
 def zkAmend : (env : Env) -> (s : State) -> Option (Prod State (List Out)) :=
   fun (env : Env) (s : State) =>
     flagIf (addrEq (cand s) zkNoAddr) none
-      (flagIf (natEq (kind s) 1)
+  (flagIf (natEq (kind s) 0)
+        (flagIf (natLe (natAdd (nmem s) 1) (natAdd (ayes s) (ayes s)))
+          (some (pair (makeState (mapSet (members s) (cand s) flagYes) (mapSet (status s) (cand s) 1) (cx s) (cy s) (deadline s) (accx s) (accy s) (bits s) (ranged s) (natAdd (poll s) 1) zkNoAddr 0 0 (natAdd (nmem s) 1) (voted s) (kind s) (terms s) (chg s)) nil))
+          (flagIf (natLe (nmem s) (natAdd (nays s) (nays s)))
+            (some (pair (makeState (members s) (status s) (cx s) (cy s) (deadline s) (accx s) (accy s) (bits s) (ranged s) (natAdd (poll s) 1) zkNoAddr 0 0 (nmem s) (voted s) (kind s) (terms s) (chg s)) nil))
+    none))
+  (flagIf (natEq (kind s) 1)
         (flagIf (natLe (natAdd (nmem s) 1) (natAdd (ayes s) (ayes s)))
           (flagIf (mapGet (members s) (cand s))
-            (some (pair (makeState (mapSet (members s) (cand s) flagNo) (mapSet (status s) (cand s) 2) (cx s) (cy s) (deadline s) (accx s) (accy s) (bits s) (ranged s) (natAdd (poll s) 1) zkNoAddr 0 0 (natSub (nmem s) 1) (voted s) 0) nil))
-            (some (pair (makeState (members s) (status s) (cx s) (cy s) (deadline s) (accx s) (accy s) (bits s) (ranged s) (natAdd (poll s) 1) zkNoAddr 0 0 (nmem s) (voted s) 0) nil)))
+            (some (pair (makeState (mapSet (members s) (cand s) flagNo) (mapSet (status s) (cand s) 2) (cx s) (cy s) (deadline s) (accx s) (accy s) (bits s) (ranged s) (natAdd (poll s) 1) zkNoAddr 0 0 (natSub (nmem s) 1) (voted s) 0 (terms s) (chg s)) nil))
+            (some (pair (makeState (members s) (status s) (cx s) (cy s) (deadline s) (accx s) (accy s) (bits s) (ranged s) (natAdd (poll s) 1) zkNoAddr 0 0 (nmem s) (voted s) 0 (terms s) (chg s)) nil)))
           (flagIf (natLe (nmem s) (natAdd (nays s) (nays s)))
-            (some (pair (makeState (members s) (status s) (cx s) (cy s) (deadline s) (accx s) (accy s) (bits s) (ranged s) (natAdd (poll s) 1) zkNoAddr 0 0 (nmem s) (voted s) 0) nil))
+            (some (pair (makeState (members s) (status s) (cx s) (cy s) (deadline s) (accx s) (accy s) (bits s) (ranged s) (natAdd (poll s) 1) zkNoAddr 0 0 (nmem s) (voted s) 0 (terms s) (chg s)) nil))
             none))
-        (flagIf (natLe (natAdd (nmem s) 1) (natAdd (ayes s) (ayes s)))
-          (some (pair (makeState (mapSet (members s) (cand s) flagYes) (mapSet (status s) (cand s) 1) (cx s) (cy s) (deadline s) (accx s) (accy s) (bits s) (ranged s) (natAdd (poll s) 1) zkNoAddr 0 0 (natAdd (nmem s) 1) (voted s) (kind s)) nil))
-          (flagIf (natLe (nmem s) (natAdd (nays s) (nays s)))
-            (some (pair (makeState (members s) (status s) (cx s) (cy s) (deadline s) (accx s) (accy s) (bits s) (ranged s) (natAdd (poll s) 1) zkNoAddr 0 0 (nmem s) (voted s) (kind s)) nil))
-            none)))
+    (flagIf (natLe (natAdd (nmem s) 1) (natAdd (ayes s) (ayes s)))
+      (some (pair (makeState (members s) (status s) (cx s) (cy s) (deadline s) (accx s) (accy s) (bits s) (ranged s) (natAdd (poll s) 1) zkNoAddr 0 0 (nmem s) (voted s) 0 (natSub (kind s) 2) (now env)) nil))
+      (flagIf (natLe (nmem s) (natAdd (nays s) (nays s)))
+        (some (pair (makeState (members s) (status s) (cx s) (cy s) (deadline s) (accx s) (accy s) (bits s) (ranged s) (natAdd (poll s) 1) zkNoAddr 0 0 (nmem s) (voted s) 0 (terms s) (chg s)) nil))
+        none))))
 
 -- View: isMember (PLAN section 7).
 def zkIsMember : (env : Env) -> (s : State) -> (a : Addr) -> Flag :=
@@ -241,15 +254,29 @@ def zkIsMember : (env : Env) -> (s : State) -> (a : Addr) -> Flag :=
 
 -- Entry (S11 Part 1): a member opens the exit poll on the member a (kind 1, the expel at zkAmend). It reverts
 -- when the caller is not a member, a poll is open, or a is not a member (the zero address included). The
--- caller can be a: the vote then has the effect of zkDepart. It is the last entry: the dispatch order of the
--- other entries does not change.
+-- caller can be a: the vote then has the effect of zkDepart. It comes after the S10 entries: the dispatch order of
+-- the S10 entries does not change. The S11 Part 2 entries come after it.
 def zkProposeExit : (env : Env) -> (s : State) -> (a : Addr) -> Option (Prod State (List Out)) :=
   fun (env : Env) (s : State) (a : Addr) =>
     flagIf (zkAnd (mapGet (members s) (caller env)) (addrEq (cand s) zkNoAddr))
       (flagIf (mapGet (members s) a)
-        (some (pair (makeState (members s) (status s) (cx s) (cy s) (deadline s) (accx s) (accy s) (bits s) (ranged s) (poll s) a (ayes s) (nays s) (nmem s) (voted s) 1) nil))
+        (some (pair (makeState (members s) (status s) (cx s) (cy s) (deadline s) (accx s) (accy s) (bits s) (ranged s) (poll s) a (ayes s) (nays s) (nmem s) (voted s) 1 (terms s) (chg s)) nil))
         none)
       none
+
+-- Entry (S11 Part 2): a member opens the terms poll on the menu entry i (kind 2 + i, the terms change at
+-- zkAmend). It reverts when the caller is not a member, a poll is open, or i is not in the menu (i >= 3). A
+-- poll on the current entry is accepted: a majority can start the window again. A terms poll has no
+-- candidate, thus cand holds the caller (the zero address is "no open poll").
+def zkProposeTerms : (env : Env) -> (s : State) -> (i : Nat) -> Option (Prod State (List Out)) :=
+  fun (env : Env) (s : State) (i : Nat) =>
+  flagIf (zkAnd (mapGet (members s) (caller env)) (addrEq (cand s) zkNoAddr))
+    (flagIf (natLe 3 i) none (some (pair (makeState (members s) (status s) (cx s) (cy s) (deadline s) (accx s) (accy s) (bits s) (ranged s) (poll s) (caller env) (ayes s) (nays s) (nmem s) (voted s) (natAdd 2 i) (terms s) (chg s)) nil)))
+    none
+
+-- View: terms (PLAN section 7), the menu index of the current terms.
+def zkTerms : (env : Env) -> (s : State) -> Nat :=
+  fun (env : Env) (s : State) => terms s
 
 -- Review regressions for proof bounds and scalar encodings.
 def emptyOpen : SchnorrProof := pair (pair 3375067998069891636219788075293155034804894088561886047966428878849990394930u 3922351410060594331739905335299836702423744189148923529681436267396531681325u) (pair 8597939669460251328005049418096605809333994177893183986842015191416319236139u 14442140385795087337370935168415348143435625911770867638322334190322826756107u)
@@ -268,10 +295,10 @@ def bitScalar1 : Flag := bitVerify c0 (pair (first bitProof0) (pair (first (seco
 -- A completed range proof of cKA, followed by a partial repay (5u, 5u).
 def reviewAddr : Addr := 0x00000000000000000000000000000000000000aa
 def reviewEnv : Env := makeEnv 1 reviewAddr
-def reviewRangedState : State := makeState (mapSet mapEmpty reviewAddr flagYes) (mapSet mapEmpty reviewAddr 1) (mapSet mapEmpty reviewAddr (first cKA)) (mapSet mapEmpty reviewAddr (second cKA)) (mapSet mapEmpty reviewAddr 8) mapEmpty mapEmpty mapEmpty (mapSet mapEmpty reviewAddr flagYes) 0 0x0000000000000000000000000000000000000000 0 0 1 mapEmpty 0
+def reviewRangedState : State := makeState (mapSet mapEmpty reviewAddr flagYes) (mapSet mapEmpty reviewAddr 1) (mapSet mapEmpty reviewAddr (first cKA)) (mapSet mapEmpty reviewAddr (second cKA)) (mapSet mapEmpty reviewAddr 8) mapEmpty mapEmpty mapEmpty (mapSet mapEmpty reviewAddr flagYes) 0 0x0000000000000000000000000000000000000000 0 0 1 mapEmpty 0 0 0
 def repayUnranges : Flag := option flagYes (fun (p : Prod State (List Out)) => mapGet (ranged (first p)) reviewAddr) (zkRepay reviewEnv reviewRangedState 5u 5u)
 -- One accepted bit of cKA, followed by a partial repay (5u, 5u) during the stream.
-def reviewPartialState : State := makeState (mapSet mapEmpty reviewAddr flagYes) (mapSet mapEmpty reviewAddr 1) (mapSet mapEmpty reviewAddr (first cKA)) (mapSet mapEmpty reviewAddr (second cKA)) (mapSet mapEmpty reviewAddr 8) (mapSet mapEmpty reviewAddr (first (first rb31))) (mapSet mapEmpty reviewAddr (second (first rb31))) (mapSet mapEmpty reviewAddr 1) mapEmpty 0 0x0000000000000000000000000000000000000000 0 0 1 mapEmpty 0
+def reviewPartialState : State := makeState (mapSet mapEmpty reviewAddr flagYes) (mapSet mapEmpty reviewAddr 1) (mapSet mapEmpty reviewAddr (first cKA)) (mapSet mapEmpty reviewAddr (second cKA)) (mapSet mapEmpty reviewAddr 8) (mapSet mapEmpty reviewAddr (first (first rb31))) (mapSet mapEmpty reviewAddr (second (first rb31))) (mapSet mapEmpty reviewAddr 1) mapEmpty 0 0x0000000000000000000000000000000000000000 0 0 1 mapEmpty 0 0 0
 def reviewPartialRepay : Option (Prod State (List Out)) := zkRepay reviewEnv reviewPartialState 5u 5u
 def repayResetsBits : Nat := option 99 (fun (p : Prod State (List Out)) => mapGet (bits (first p)) reviewAddr) reviewPartialRepay
 def repayResetsAcc : Flag := option flagNo (fun (p : Prod State (List Out)) => zkAnd (u256Eq (mapGet (accx (first p)) reviewAddr) 0u) (u256Eq (mapGet (accy (first p)) reviewAddr) 0u)) reviewPartialRepay
@@ -488,7 +515,7 @@ def reviewLateEnv : Env := makeEnv 9 reviewAddr
 def reviewForfeited : Option (Prod State (List Out)) := zkLiquidate reviewLateEnv reviewRangedState reviewAddr
 def zkLiquidateLink : Flag := option flagYes (fun (p : Prod State (List Out)) => zkPosActive reviewLateEnv (first p) reviewAddr) reviewForfeited
 -- S10 Part 5: the member bb cannot propose aa, Forfeited with an open loan (status 2, deadline 8, not a member).
-def zkProposeForfeited : Nat := option 0 (fun (e : Prod State (List Out)) => 1) (zkPropose (makeEnv 1 0x00000000000000000000000000000000000000bb) (makeState (mapSet mapEmpty 0x00000000000000000000000000000000000000bb flagYes) (mapSet mapEmpty reviewAddr 2) mapEmpty mapEmpty (mapSet mapEmpty reviewAddr 8) mapEmpty mapEmpty mapEmpty mapEmpty 0 zkNoAddr 0 0 1 mapEmpty 0) reviewAddr)
+def zkProposeForfeited : Nat := option 0 (fun (e : Prod State (List Out)) => 1) (zkPropose (makeEnv 1 0x00000000000000000000000000000000000000bb) (makeState (mapSet mapEmpty 0x00000000000000000000000000000000000000bb flagYes) (mapSet mapEmpty reviewAddr 2) mapEmpty mapEmpty (mapSet mapEmpty reviewAddr 8) mapEmpty mapEmpty mapEmpty mapEmpty 0 zkNoAddr 0 0 1 mapEmpty 0 0 0) reviewAddr)
 
 -- Review regressions: a nonzero commitment keeps its original liquidation deadline.
 def repayZeroDeadline : Nat := option 99 (fun (p : Prod State (List Out)) => mapGet (deadline (first p)) reviewAddr) (zkRepay reviewEnv reviewRangedState 0u 0u)

@@ -508,6 +508,58 @@ gas, measured in the form of the PLAN section 6 derivation, is 1,907,039
 (9194 x 200 for the code deposit, 68,239 for the constructor and the
 rest).
 
+S11 Part 2 (2026-10-20) adds the terms menu and the O17 window of PLAN
+section 7 in form B of the S11 Part 2 brief (rulings Q0 to Q7 (a)). The
+state gets terms (slot 16, the menu index) and chg (slot 17, the time of
+the last terms change, 0 at deploy) after kind. zkProposeTerms (after
+zkProposeExit) opens a terms poll (kind 2 + i) on the menu entry i. It
+reverts for a caller that is not a member, an open poll, or i >= 3. The
+menu has 3 grace entries: 0 is zkGrace (7), 1 is 14 and 2 is 3. zkAmend
+tests kind 0, then kind 1, then the terms branch with the admit bar: 2
+ayes > nmem writes terms = i and chg = now; 2 nays >= nmem rejects; each
+close writes kind 0. zkBorrow sets the deadline to now + the grace of the
+current entry. zkLiquidate also needs now > chg + zkGrace. With nmem 4, bb
+borrows at 1 (deadline 8) and entry 1 applies at 5: the liquidate of bb
+at 9 and at 12 reverts, and the liquidate at 13 is accepted. dd borrows
+at 13 under entry 1 (deadline 27): the liquidate at 27 reverts and at 28
+is accepted. The withdraw on exit of Part 1 applies to a terms poll with
+no new code: after the exit of a yes voter, the amend reverts. zk chain
+192 to 249 steps (228 calls and 21 gas rows; the terms block runs on a
+third deploy). test/run/zk.out prints the 2 new slots. The 8 mutants of
+the brief (the apply write, the menu bound, the window test, the window +
+1, the chg write, the menu lookup, the open-poll test and the reject
+branch) are all killed.
+
+| Row | Before | S11 Part 2 | Change |
+|---|---|---|---|
+| zkBorrow 7u 11u, first | 107,220 | 109,504 | +2,284 (one cold SLOAD of terms and the menu test) |
+| zkLiquidate at 9, ok | 10,113 | 12,323 | +2,210 (one cold SLOAD of chg and the window test) |
+| zkAmend, admit ee | 86,949 | 86,983 | +34 (the kind 0 test first) |
+| zkAmend, exit, expel | 38,744 | 38,909 | +165 |
+| zkAmend, exit, reject | 25,344 | 25,510 | +166 |
+| zkAmend, exit, the candidate exited | 27,416 | 27,579 | +163 |
+| zkProposeTerms 1, first | new | 47,020 | new row |
+| zkVote 1, first yes on a terms poll | new | 36,923 | new row |
+| zkAmend, terms apply at 5 | new | 69,640 | new row (chg written from zero) |
+| zkLiquidate inside the window (revert) | new | 9,345 | new row |
+| zkLiquidate at the window end (13) | new | 12,323 | new row |
+| zkBorrow under entry 1 | new | 109,375 | new row |
+| zkAmend, terms reject | new | 25,548 | new row |
+| zkAmend after a voter exit (revert) | new | 11,513 | new row |
+| zkAmend, terms apply at 20 | new | 35,440 | new row |
+
+The other 6 gas rows do not move. The 12 rows of record are the same with
+the 2 new entries after zkProposeExit and at the file end. The sizes
+after Part 2 (the test/build.sh:134 form): runtime 9816 bytes (+622, 39.9
+% of EIP-170 24576), initcode 9913 bytes (+622, 20.2 % of EIP-3860
+49152). The deploy gas is measured with
+`evm --create --gas 30000000 --codefile init.hex --statdump run` on the
+staged initcode. The CLI prints 27,968,425 remaining gas on the create
+path, so the cost is 30,000,000 - 27,968,425 = 2,031,575:
+9816 x 200 for the code deposit plus 68,375 for the constructor and the
+rest. Relative to Part 1, the constructor cost grows by 136 gas as the
+runtime copy and memory allocation grow.
+
 Staged review (2026-10-19) reproduced and fixed three defects:
 
 - HIGH: Schnorr and bit provers reused the same deterministic nonce for

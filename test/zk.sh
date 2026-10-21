@@ -11,12 +11,13 @@
 # are the words of the zk.lang
 # literals, read by `langc --kit eval` (the same words as the eval rows): this
 # file carries no literal. It needs evm (go-ethereum), bc, od, build/slottool
-# and build/langc. Run it from the kit root. Twelve gas rows (S10 Parts 3 and
-# 5, S11 Part 1, gasRow) check the execution gas of the first zkPropose, the
+# and build/langc. Run it from the kit root. Twenty-one gas rows (S10 Parts 3
+# and 5, S11 Parts 1 and 2, gasRow) check the execution gas of the first zkPropose, the
 # first yes zkVote, the admit zkAmend, the first zkBorrow, the last
 # zkRangeBit, zkRangeDone, zkRepay, the ok zkLiquidate, the first
 # zkProposeExit and the three exit zkAmend rows (expel, reject, and the close
-# after the candidate exits) against the gas table of docs/PLAN.md section 6,
+# after the candidate exits) and the 9 terms rows of S11 Part 2 against the gas
+# table of docs/PLAN.md section 6 and docs/VALIDATION.md,
 # exact: an emitter change moves them on purpose.
 # S10 Part 4: zkBorrow and zkRepay take the public delta d and the blinding r
 # (two words: no proof and no point), so the wrong-opening and off-curve rows
@@ -26,6 +27,9 @@
 # S11 Part 1, the governed exit, runs on a second deploy: zkProposeExit, the
 # exit zkAmend (expel, reject, the close after the candidate exits) and the F7
 # rows (an exit withdraws the caller's vote of the open poll).
+# S11 Part 2, the terms menu, runs on a third deploy: zkProposeTerms, the terms
+# zkAmend (apply, reject, and the F7 withdraw), the view zkTerms, the zkBorrow
+# deadline of the menu entry and the O17 window in zkLiquidate.
 set -u
 fail=0
 steps=0
@@ -129,7 +133,7 @@ else
   call revert zkVote 1
   # 2 ayes > nmem (2 x 1 > 1): the amend admits ee, nmem 2.
   call ok zkAmend
-  gasRow 86949
+  gasRow 86983
   call "out 1" zkIsMember "$ee"
   # ee proposes ff. One aye of two members (2 x 1 = nmem) does not admit;
   # then ee votes no and 2 nays >= nmem rejects ff. No poll is open after it.
@@ -158,7 +162,7 @@ else
   # The first borrow: zkBorrow 7u 11u from the identity stores cKA, the deadline
   # 1 + 7 = 8.
   call ok zkBorrow 7u 11u
-  gasRow 107220
+  gasRow 109504
   # 2. range overflow: rb00Bad has e0 + 1, and the end before any bit.
   call revert zkRangeBit $(words rb00Bad)
   call revert zkRangeDone
@@ -179,7 +183,7 @@ else
   call ok zkBorrow 7u 11u
   callAt 8 "$caller" revert zkLiquidate "$caller"
   callAt 9 "$caller" ok zkLiquidate "$caller"
-  gasRow 10113
+  gasRow 12323
   call revert zkBorrow 7u 11u
   # S10 Part 4, the delta rows: bb (a member since row 4.) borrows 5u 13u from
   # the identity and 7u 13u on top, repays 5u 13u, then repays 20u 13u, more
@@ -246,7 +250,7 @@ else
     call revert zkAmend
     callAt 1 "$third" ok zkVote 1
     call ok zkAmend
-    gasRow 38744
+    gasRow 38909
     call "out 0" zkIsMember "$fourth"
     callAt 1 "$fourth" revert zkPropose "$ee"
     callAt 1 "$fourth" revert zkDepart
@@ -255,7 +259,7 @@ else
     callAt 1 "$other" ok zkVote 0
     callAt 1 "$third" ok zkVote 0
     call ok zkAmend
-    gasRow 25344
+    gasRow 25510
     call "out 1" zkIsMember "$third"
     # After an exit poll, an admit poll admits again (kind 0). Then ee exits
     # (zkDepart) during its own exit poll: the amend only closes the poll, and
@@ -267,7 +271,7 @@ else
     callAt 1 "$third" ok zkVote 1
     callAt 1 "$ee" ok zkDepart
     call ok zkAmend
-    gasRow 27416
+    gasRow 27579
     # nmem is 3: one nay (2 x 1 < 3) does not reject f1, thus the amend
     # reverts (with nmem 2 it rejects). Then 2 ayes (2 x 2 > 3) admit f1.
     call ok zkPropose "$f1"
@@ -303,6 +307,76 @@ else
     callAt 1 "$f3" ok zkVote 0
     callAt 1 "$f2" ok zkAmend
     call "out 1" zkIsMember "$f3"
+  fi
+  # S11 Part 2, the terms menu, on a third deploy: aa, bb, cc and dd are the
+  # members (nmem 4). The menu: entry 0 is zkGrace (7), entry 1 is 14, entry 2
+  # is 3. The view zkTerms gives the menu index of the current terms.
+  if ! deploy "$prog"; then
+    echo "FAIL zk deploy (S11 Part 2): $(head -n 1 "$tmp/dump")"
+    fail=$((fail + 1))
+  else
+    admit "$caller" "$other" "$caller"
+    admit "$caller" "$third" "$caller" "$other"
+    admit "$caller" "$fourth" "$caller" "$other"
+    call "out 0" zkTerms
+    # zkProposeTerms reverts for a caller that is not a member and for an
+    # index that is not in the menu.
+    callAt 1 "$ee" revert zkProposeTerms 1
+    call revert zkProposeTerms 3
+    # bb borrows at 1 under entry 0: the deadline is 8.
+    callAt 1 "$other" ok zkBorrow 7u 11u
+    call ok zkProposeTerms 1
+    gasRow 47020
+    # One poll at a time, for the three kinds.
+    call revert zkPropose "$ee"
+    call revert zkProposeExit "$third"
+    call revert zkProposeTerms 2
+    # 2 ayes of 4 members do not apply entry 1; 3 ayes apply it at 5 (chg 5).
+    call ok zkVote 1
+    gasRow 36923
+    callAt 1 "$other" ok zkVote 1
+    call revert zkAmend
+    callAt 1 "$third" ok zkVote 1
+    callAt 5 "$caller" ok zkAmend
+    gasRow 69640
+    call "out 1" zkTerms
+    # The O17 window: no liquidation until now is past chg + zkGrace (12). The
+    # deadline 8 of bb does not end the window.
+    callAt 9 "$caller" revert zkLiquidate "$other"
+    gasRow 9345
+    callAt 12 "$caller" revert zkLiquidate "$other"
+    callAt 13 "$caller" ok zkLiquidate "$other"
+    gasRow 12323
+    # dd borrows at 13 under entry 1: the deadline is 13 + 14 = 27.
+    callAt 13 "$fourth" ok zkBorrow 7u 11u
+    gasRow 109375
+    callAt 27 "$caller" revert zkLiquidate "$fourth"
+    callAt 28 "$caller" ok zkLiquidate "$fourth"
+    # 2 nays of 4 members (2 x 2 >= 4) reject entry 2: the terms do not change.
+    callAt 13 "$third" ok zkProposeTerms 2
+    call ok zkVote 0
+    callAt 1 "$other" ok zkVote 0
+    call ok zkAmend
+    gasRow 25548
+    call "out 1" zkTerms
+    # F7, a terms poll: aa and bb vote yes, then bb exits (ayes 1, nmem 3), thus
+    # the amend reverts. cc votes yes, and the amend applies entry 2 at 20.
+    call ok zkProposeTerms 2
+    call ok zkVote 1
+    callAt 1 "$other" ok zkVote 1
+    callAt 1 "$other" ok zkDepart
+    call revert zkAmend
+    gasRow 11513
+    callAt 1 "$third" ok zkVote 1
+    callAt 20 "$caller" ok zkAmend
+    gasRow 35440
+    call "out 2" zkTerms
+    # cc borrows at 20 under entry 2: the deadline is 23, but the window of the
+    # change at 20 ends after 27.
+    callAt 20 "$third" ok zkBorrow 7u 11u
+    callAt 23 "$caller" revert zkLiquidate "$third"
+    callAt 24 "$caller" revert zkLiquidate "$third"
+    callAt 28 "$caller" ok zkLiquidate "$third"
   fi
 fi
 
