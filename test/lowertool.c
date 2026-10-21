@@ -376,6 +376,13 @@ int main(void) {
     "def entry : Env -> State -> Flag -> Option (Prod State (List Out)) := fun env s f => "
     "some (pair (makeState 9) (flagIf f nil (cons (Logged (u256Add 7u " WMAX ")) nil)))\n",
     1, 1, 1, 0, 2, 0);
+  /* S12: a step uses a flagIf word two times (the ring chain word). The IR
+     has one IF, thus the chain is computed one time and the gas is linear. */
+  ok &= regression("flag-word-shared", LOGGED
+    "def twice : U256 -> U256 := fun w => hash w w\n"
+    "def entry : Env -> State -> Flag -> U256 -> Option (Prod State (List Out)) := fun env s f x => "
+    "some (pair (makeState 9) (cons (Logged (twice (flagIf f x 7u))) nil))\n",
+    1, 2, 0, 0, 1, 0);
   ok &= order_regression("effect-order", LOGGED ENTRY
     "some (pair (makeState 9) (cons (Logged 7u) nil))\n", 0);
   ok &= order_regression("effect-order-same-state", LOGGED ENTRY

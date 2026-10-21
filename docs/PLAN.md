@@ -409,6 +409,25 @@ window (revert) 9,345 and at the window end 12,323. The sizes
 deploy 2,031,575 (measured, including 68,375 for the constructor and the
 rest).
 
+S12 (2026-10-21): the ring vote (O12 (a), Form A). The state gets the
+deploy tag, the poll number, nkeys, nmem0 (nmem at the poll open), the key
+image map seen, the key slot map slot, the stored keys and the poll point.
+The staged review replaces the shared init tag with zero: the founder
+must call zkDomain once with a fresh nonzero deployment domain before
+any poll can open. The domain cannot change after setup.
+Each poll opener takes the poll point words k qy, and zkVote takes the
+choice and 7 ring words. Twelve rows move: zkPropose 28,948 to 103,206,
+the first zkVote 54,023 to 92,585 (nkeys 1), zkAmend (admit) 86,983 to
+89,051, zkProposeExit 49,123 to 72,081, the exit zkAmend rows 38,909 to
+43,269, 25,510 to 25,576 and 27,579 to 27,647, zkProposeTerms 47,020 to
+69,978, the first terms zkVote 36,923 to 123,282 (nkeys 2), the terms
+apply rows 69,640 to 69,707 and 35,440 to 35,507 and the terms reject
+25,548 to 28,416. Two rows are new (G3): zkVote for nkeys 3 136,879 and
+for nkeys 4 184,676. The other 9 rows keep their numbers. The sizes
+(docs/VALIDATION.md, S12): runtime 21120 bytes, initcode 21428 bytes,
+deploy 4,405,689 (measured, including 181,689 for the constructor and the
+rest).
+
 The S10 size rows after Part 5 (S10 close, 2026-10-20, measured on a
 copy of 48a6b86). The sizes take the test/build.sh:134 form. The deploy
 gas takes the form of the derivation above, on the initcode:
@@ -546,6 +565,16 @@ now; 2 nays >= nmem rejects; else revert. `zkBorrow` sets the deadline to
 now + the grace of the current entry, and `zkLiquidate` also needs now >
 chg + zkGrace (the O17 window). `zkTerms()` is the `terms` view.
 
+S12 replaces caller votes with the ring signature. The founder first
+calls `zkDomain(d)` with a fresh nonzero 256-bit domain for this deployment,
+including deployments on other chains. Zero is the unconfigured state:
+all three poll openers revert until setup. A non-member, a zero domain
+and any later setup call revert. Env has no contract address or chain id,
+so domain uniqueness is the founder's responsibility; reusing a domain
+with the same keys permits replay. `zkDeployTag` is a test fixture only.
+Each poll opener also takes k and qy, and `zkVote` takes the choice and
+the seven signature words. The amend bars use nmem0 at the poll open.
+
 The contract holds no tokens by default (O18): the design admits no deposit
 or withdraw operation, so the ledger is a private credit ledger in one
 abstract unit. A constitution is code, so the contract holds a finite menu
@@ -572,7 +601,7 @@ for each build), the counts in docs/STATUS.md, and a USER commit.
 | S9 | ZK ledger: Pedersen on BN254 in C, Sigma-protocol verifier lowering, zkEquiv, PrivateLoan, borrow, repay, liquidate (moved from S8, USER ruling S8) | known-answer vectors; mutants: wrong opening, range overflow, non-member step, step on a Forfeited position, point not on the curve |
 | S10 | contract end to end: deploy, vote, amend, borrow, repay, liquidate; host and EVM differential; gas table; chain probe | differential rows, revert rows, EIP-170 and EIP-3860 size limits; Part 1 Loan and zkPrivateLoan DONE 2026-10-20; Part 2 pure ledger borrow, repay, liquidate DONE 2026-10-20; Part 3 differential, gas table, EIP rows DONE 2026-10-20; Part 4 ledger/contract integration DONE 2026-10-20; Part 5 governed admit DONE 2026-10-20; S10 CLOSED 2026-10-20: the S10 form of vote and amend (section 7); the governed exit and the terms menu move to S11, O12 (a) to S12, the chain probe to a USER step (O22) |
 | S11 | governance (added at the S10 close, USER ruling 2026-10-20): the governed exit (a poll kind, admit or exit), then the terms menu (`Gov L`) and the O17 window after a terms change | exit poll rows (the zkDepart state change on cand, an exit poll on a non-member), the bar effect of an exit during a poll (VALIDATION, S10 close), the 8 S10 gas rows kept or ruled, a liquidate inside the window; Part 1 governed exit DONE 2026-10-20 (kind at slot 15, zkProposeExit, the zkAmend exit branch, an exit withdraws the vote of the open poll); Part 2 terms menu DONE 2026-10-20 (form B: terms and chg at slots 16 and 17, zkProposeTerms and zkTerms, the zkAmend terms branch, the menu deadline in zkBorrow, the O17 window in zkLiquidate) |
-| S12 | O12 (a) (added at the S10 close): bLSAG ring votes over stored member keys (O19 (b)) | a vote by a key outside the ring, a reused key image, the zkVote gas row as a function of nmem |
+| S12 | O12 (a) (added at the S10 close): bLSAG ring votes over stored member keys (O19 (b)) | a vote by a key outside the ring, a reused key image, the zkVote gas row as a function of nmem; DONE 2026-10-21 (rulings Q-S12-1 to Q-S12-7 (a), D1 to D3 (a), K = 4): zkKey (the member, curve, zero key, second key and fifth key guards), the ring zkVote in Form A (G1, G2, G3 for nkeys 1 to 4), the deploy tag in m (finding 4), ix != 0, the key removal at zkDepart, the zkAmend bar on nmem0 (Q-S12-3 (a)) |
 | S13 | regimes (optional, O23), docs, final gate (S11 until the S10 close) | regime rows |
 
 Builder call (S2, 2026-10-17): the port of orbit-lang 7734007. Identity
@@ -1307,7 +1336,11 @@ has options, (a) is the ruling. O20 is a USER ruling from the request.
   (orbit-lang O10), so the contract keeps only the orbit. (b) one
   transaction carries a whole configuration signed by all members (no
   anonymity). S10 Part 5 (2026-10-20): the votes are public (the
-  caller); (a) stays open, at S12.
+  caller); (a) stays open, at S12. RULED S12 (2026-10-21): (a). A vote
+  is a bLSAG ring signature over the stored member keys (Form A: the poll
+  point comes from the deploy tag and the poll number); m binds the
+  deploy tag, the poll and the choice. The sender address stays public
+  (S12 finding 7; a relayer is out of scope).
 - O13 Commitment: (a) Pedersen over BN254 G1. (b) a keccak256 commitment
   (no homomorphism, so the design's monoid law fails). RULED S9
   (2026-10-19): (a); H by try-and-increment hash-to-curve from the tag
@@ -1351,7 +1384,9 @@ has options, (a) is the ruling. O20 is a USER ruling from the request.
   keyed by a pseudonym). S10 Part 4 (2026-10-20): the member access is
   the transaction caller; the transaction signature is the agent
   signature, and the identity is public, as (a) says. The contract
-  stores no agent key, so (b) and O12 (a) need stored keys first.
+  stores no agent key, so (b) and O12 (a) need stored keys first. S12
+  (2026-10-21): the members store ring keys (zkKey, K = 4). The votes use
+  the ring signature of (b); the loan steps stay (a).
 - O20 Proof irrelevance: PROHIBITED (USER ruling 2026-10-17, section 1).
 - O21 Dependent elimination on a HIT: the cases of path constructors are
   PathP over the motive. LendingLedger over Membership (S7) and law

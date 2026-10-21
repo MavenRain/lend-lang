@@ -245,7 +245,8 @@ struct Stmts {
 };
 
 /* A curve-op value lowered in this entry (S2, R17): LOCAL holds the block of
-   the STATICCALL output of STMT. */
+   the STATICCALL output of STMT. A flagIf word value (S12): LOCAL holds the
+   word that the IF STMT sets. */
 typedef struct {
   const Value *value;
   const IrStmt *stmt;
@@ -441,8 +442,16 @@ static const IrExpr *list_base(Low *l, uint32_t field) {
   return base;
 }
 
-/* flagIf at a word position: an IF that sets one local in each branch. */
+static int block_has(const Stmts *b, const IrStmt *stmt);
+static int memo_add(Low *l, const Value *v, const IrStmt *stmt, uint32_t local);
+
+/* flagIf at a word position: an IF that sets one local in each branch. One
+   IF per value per entry (S12, the lower_curve rule): a second use in B, or
+   in a block that runs after B, reads the local. Thus a word that a step
+   uses two times (a ring chain word) is computed one time. */
 static const IrExpr *lower_if_value(Low *l, Stmts *b, const Value *v) {
+  for (size_t i = 0; i < l->memo_count; i++)
+    if (l->memo[i].value == v && block_has(b, l->memo[i].stmt)) return ir_local(l, l->memo[i].local);
   const IrExpr *cond = lower_expr(l, b, v->args[0]);
   uint32_t local = l->locals++;
   Stmts arms[2] = {{NULL, 0, 0, b}, {NULL, 0, 0, b}};
@@ -454,7 +463,7 @@ static const IrExpr *lower_if_value(Low *l, Stmts *b, const Value *v) {
   s->expr = cond;
   s->body = block_of(&arms[0]);
   s->otherwise = block_of(&arms[1]);
-  return push(l, b, s) ? ir_local(l, local) : NULL;
+  return push(l, b, s) && memo_add(l, v, s, local) ? ir_local(l, local) : NULL;
 }
 
 /* The eager IR cannot carry a trapped accumulator into the next iteration.

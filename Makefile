@@ -16,11 +16,12 @@ LOWER_TOOL = test/lowertool.c $(FRONT) $(TARGET)
 EVM_TOOL = test/evmtool.c src/asm.c src/keccak.c
 EMIT_TOOL = test/emittool.c $(filter-out src/evm.c,$(TARGET)) src/keccak.c
 ZK_TOOL = test/zktool.c $(filter-out src/front/front.c,$(FRONT))
+RING_TOOL = test/ringtool.c $(filter-out src/front/front.c,$(FRONT))
 HEADERS = $(wildcard src/*.h src/front/*.h)
 
 .PHONY: build check check-clang clean
 
-build: build/langc build/asmtool build/fronttool build/pathtool build/runtool build/slottool build/buildtool build/lowertool build/evmtool build/emittool build/zktool
+build: build/langc build/asmtool build/fronttool build/pathtool build/runtool build/slottool build/buildtool build/lowertool build/evmtool build/emittool build/zktool build/ringtool
 
 build/domain.c: domain/domain.lang gen/embed.c
 	mkdir -p build
@@ -67,6 +68,10 @@ build/zktool: $(ZK_TOOL) $(HEADERS)
 	mkdir -p build
 	$(TCC) $(CFLAGS) -o build/zktool $(ZK_TOOL)
 
+build/ringtool: $(RING_TOOL) $(HEADERS)
+	mkdir -p build
+	$(TCC) $(CFLAGS) -o build/ringtool $(RING_TOOL)
+
 check-clang: build/domain.c
 	$(CC) $(CLANG_FLAGS) $(SRC) build/domain.c
 	$(CC) $(CLANG_FLAGS) $(TOOL)
@@ -79,8 +84,9 @@ check-clang: build/domain.c
 	$(CC) $(CLANG_FLAGS) $(EMIT_TOOL)
 	$(CC) $(CLANG_FLAGS) $(EVM_TOOL)
 	$(CC) $(CLANG_FLAGS) $(ZK_TOOL)
+	$(CC) $(CLANG_FLAGS) $(RING_TOOL)
 
-check: build/langc build/asmtool build/fronttool build/pathtool build/runtool build/slottool build/buildtool build/lowertool build/evmtool build/emittool build/zktool check-clang
+check: build/langc build/asmtool build/fronttool build/pathtool build/runtool build/slottool build/buildtool build/lowertool build/evmtool build/emittool build/zktool build/ringtool check-clang
 	sh test/gate.sh
 	sh test/run.sh
 	sh test/asm.sh

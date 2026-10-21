@@ -560,6 +560,81 @@ path, so the cost is 30,000,000 - 27,968,425 = 2,031,575:
 rest. Relative to Part 1, the constructor cost grows by 136 gas as the
 runtime copy and memory allocation grow.
 
+S12 (2026-10-21) adds the ring vote of O12 (a) in Form A of the S12 brief
+(rulings Q-S12-1 to Q-S12-7 (a), D1 to D3 (a), K = 4). A member stores its
+key with zkKey (x y); aa has the init key. zkKey reverts for a caller that
+is not a member, a second key, a key that is not on the curve, the zero
+key and a fifth key. zkVote takes the choice and 7 words (ix iy c0 s0 s1
+s2 s3): a linkable ring signature on the stored keys in slot order. The
+message m is hash(hash(tag, poll), ch), with the explicit deployment domain
+set once by the founder with zkDomain (finding 4). init has tag zero,
+and all three poll openers revert until setup. A fresh nonzero domain
+must be supplied for each deployment, including other chains: Env has
+no contract address or chain id. A non-member, zero and any later setup
+call revert. Reusing a domain with the same keys permits replay.
+zkDeployTag is the test fixture, not a deployment default.
+The poll point comes from hash(hash(hash(tag, poll), k), 0)
+and the word qy of the poll opener. zkVote reverts for a key outside the
+ring (G1), a key image used again in the same poll (G2), a bad response,
+a ch 1 signature sent with ch 0 and ix = 0. zkDepart removes the key of
+the sender (the last key takes its slot): the key of an exited member
+cannot sign. The zkAmend bar uses nmem0, the member count at the poll open
+(Q-S12-3 (a)): the vote of a member that exits stays, and the F7 rows keep
+their results. zk chain 249 to 294 steps (23 gas rows). test/run/zk.script
+gives each poll opener the poll point words and each zkVote the ring
+words, with 2 zkKey steps and one zkDomain step (58 steps);
+test/run/zk.out prints the new state fields. Before the domain review fix,
+the 8 mutants of section 5 of the S12 brief were all killed:
+M1 (the seen-map guard) by the eval row govVoteTwice and the zk.sh G2 row;
+M2 (the ring close) by the G1 step of test/run/zk.script and by zk.sh; M3
+(the s0 word) and M4 (the choice in m) by test/run/zk.script, by eval rows
+(govAdmitted for M3, govRejected for M4 and more) and by zk.sh; M5 (the
+zkKey curve guard) by zk.sh only, from the off-curve zkKey row on; M6 (the
+member guard) by test/run/zk.script and by zk.sh; M8 (the nmem0 bar) by
+the zk.sh zkAmend rows only; M7 (ix != 0) is equivalent on chain states (3
+is a non-residue mod p, thus no point has x = 0, and zkKey keeps O out of
+the ring), thus no behavior row fails, and the white-box eval row
+forgeVoteO (zk eval rows 68 to 69, O in a key slot) and the 4 zk.sh zkVote
+gas rows (28 gas less each) kill it.
+
+| Row | Before | S12 | Change |
+|---|---|---|---|
+| zkPropose ee, first | 28,948 | 103,206 | +74,258 |
+| zkVote 1, first yes (nkeys 1) | 54,023 | 92,585 | +38,562 |
+| zkAmend, admit ee | 86,983 | 89,051 | +2,068 |
+| zkProposeExit, first | 49,123 | 72,081 | +22,958 |
+| zkAmend, exit, expel | 38,909 | 43,269 | +4,360 |
+| zkAmend, exit, reject | 25,510 | 25,576 | +66 |
+| zkAmend, exit, the candidate exited | 27,579 | 27,647 | +68 |
+| zkProposeTerms 1, first | 47,020 | 69,978 | +22,958 |
+| zkVote 1, first yes on a terms poll (nkeys 2) | 36,923 | 123,282 | +86,359 |
+| zkVote 1 (nkeys 3) | new | 136,879 | new row (G3) |
+| zkVote 1 (nkeys 4) | new | 184,676 | new row (G3) |
+| zkAmend, terms apply at 5 | 69,640 | 69,707 | +67 |
+| zkAmend, terms reject | 25,548 | 28,416 | +2,868 |
+| zkAmend, terms apply at 20 | 35,440 | 35,507 | +67 |
+
+Staged review (2026-10-21) reproduced a HIGH cross-deployment replay:
+the shared init tag let a vote for ee on poll 0 authorize ff on a second
+deployment with the same keys. zkDomain removes this implicit default
+and requires explicit setup. The chain gate checks all setup guards,
+rejects the original signature under a different deployment domain,
+and accepts a new signature for that domain. Six host eval regressions
+check domain setup, immutability, the unset state and replay rejection.
+The new ringtool also runs under check-clang.
+The domain guard adds 187 gas to each of the three poll-opening rows;
+all other gas rows keep their S12 values. The chain gate has 294 steps,
+including the setup and replay checks.
+
+The other 9 gas rows do not move (zkBorrow, zkRangeBit, zkRangeDone,
+zkRepay, the 3 zkLiquidate rows, zkBorrow under entry 1 and the amend
+after a voter exit). The sizes after S12 (the test/build.sh:134 form):
+runtime 21120 bytes (+11,304, 85.9 % of EIP-170 24576), initcode 21428
+bytes (+11,515, 43.6 % of EIP-3860 49152). The CLI prints 25,594,311
+remaining gas on the create path, so the deploy gas is 30,000,000 -
+25,594,311 = 4,405,689: 21120 x 200 for the code deposit plus 181,689 for
+the constructor and the rest (+113,314).
+
 Staged review (2026-10-19) reproduced and fixed three defects:
 
 - HIGH: Schnorr and bit provers reused the same deterministic nonce for
