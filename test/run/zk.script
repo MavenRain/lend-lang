@@ -1,4 +1,4 @@
--- A call script for examples/zk.lang (S10 Parts 3, 4 and 5). Each call is NOW CALLER NAME ARGS.
+-- A call script for examples/zk.lang (S10 Parts 3, 4 and 5, S11 Part 1). Each call is NOW CALLER NAME ARGS.
 -- zkBorrow and zkRepay take the public delta d and the blinding r (S10 Part 4).
 -- S10 Part 5: aa is the founder (init), the only member at deploy. ok: aa proposes ee.
 1 0x00000000000000000000000000000000000000aa zkPropose 0x00000000000000000000000000000000000000ee
@@ -71,3 +71,20 @@
 1 0x00000000000000000000000000000000000000cc zkDepart
 -- revert: the Part 4 guard: no member can propose cc again.
 1 0x00000000000000000000000000000000000000aa zkPropose 0x00000000000000000000000000000000000000cc
+-- S11 Part 1, the governed exit (kind 1). revert: ee is not a member and cannot open an exit poll.
+1 0x00000000000000000000000000000000000000ee zkProposeExit 0x00000000000000000000000000000000000000dd
+-- revert: cc is not a member (it exited), thus no exit poll on cc.
+1 0x00000000000000000000000000000000000000aa zkProposeExit 0x00000000000000000000000000000000000000cc
+-- ok: aa opens the exit poll on dd. revert: one poll at a time.
+1 0x00000000000000000000000000000000000000aa zkProposeExit 0x00000000000000000000000000000000000000dd
+1 0x00000000000000000000000000000000000000aa zkPropose 0x00000000000000000000000000000000000000ee
+-- ok: aa and bb vote yes, then the amend expels dd (2 x 2 ayes > 3 members): not a member, Forfeited.
+1 0x00000000000000000000000000000000000000aa zkVote 1
+1 0x00000000000000000000000000000000000000bb zkVote 1
+1 0x00000000000000000000000000000000000000aa zkAmend
+-- revert: dd is not a member and cannot exit.
+1 0x00000000000000000000000000000000000000dd zkDepart
+-- ok: aa opens the exit poll on bb, bb votes no and the amend rejects it (2 x 1 nay >= 2 members).
+1 0x00000000000000000000000000000000000000aa zkProposeExit 0x00000000000000000000000000000000000000bb
+1 0x00000000000000000000000000000000000000bb zkVote 0
+1 0x00000000000000000000000000000000000000aa zkAmend

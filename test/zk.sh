@@ -11,16 +11,21 @@
 # are the words of the zk.lang
 # literals, read by `langc --kit eval` (the same words as the eval rows): this
 # file carries no literal. It needs evm (go-ethereum), bc, od, build/slottool
-# and build/langc. Run it from the kit root. Eight gas rows (S10 Parts 3 and
-# 5, gasRow) check the execution gas of the first zkPropose, the first yes
-# zkVote, the admit zkAmend, the first zkBorrow, the last zkRangeBit,
-# zkRangeDone, zkRepay and the ok zkLiquidate against the S10 gas table of
-# docs/PLAN.md section 6, exact: an emitter change moves them on purpose.
+# and build/langc. Run it from the kit root. Twelve gas rows (S10 Parts 3 and
+# 5, S11 Part 1, gasRow) check the execution gas of the first zkPropose, the
+# first yes zkVote, the admit zkAmend, the first zkBorrow, the last
+# zkRangeBit, zkRangeDone, zkRepay, the ok zkLiquidate, the first
+# zkProposeExit and the three exit zkAmend rows (expel, reject, and the close
+# after the candidate exits) against the gas table of docs/PLAN.md section 6,
+# exact: an emitter change moves them on purpose.
 # S10 Part 4: zkBorrow and zkRepay take the public delta d and the blinding r
 # (two words: no proof and no point), so the wrong-opening and off-curve rows
 # leave. The delta rows of bb (two borrows, a partial repay and an excess
 # repay) and the third-party enroll of the Forfeited aa (a revert) close the
 # block.
+# S11 Part 1, the governed exit, runs on a second deploy: zkProposeExit, the
+# exit zkAmend (expel, reject, the close after the candidate exits) and the F7
+# rows (an exit withdraws the caller's vote of the open poll).
 set -u
 fail=0
 steps=0
@@ -120,11 +125,11 @@ else
   callAt 1 "$other" revert zkVote 1
   call revert zkVote 2
   call ok zkVote 1
-  gasRow 53734
+  gasRow 54023
   call revert zkVote 1
   # 2 ayes > nmem (2 x 1 > 1): the amend admits ee, nmem 2.
   call ok zkAmend
-  gasRow 84759
+  gasRow 86949
   call "out 1" zkIsMember "$ee"
   # ee proposes ff. One aye of two members (2 x 1 = nmem) does not admit;
   # then ee votes no and 2 nays >= nmem rejects ff. No poll is open after it.
@@ -211,6 +216,94 @@ else
   # exits, and no member can propose cc again.
   callAt 1 "$third" ok zkDepart
   call revert zkPropose "$third"
+  # S11 Part 1, the governed exit (kind 1), on a second deploy: aa is again
+  # the only member. f1, f2 and f3 are more candidates.
+  if ! deploy "$prog"; then
+    echo "FAIL zk deploy (S11 Part 1): $(head -n 1 "$tmp/dump")"
+    fail=$((fail + 1))
+  else
+    f1=0x00000000000000000000000000000000000000f1
+    f2=0x00000000000000000000000000000000000000f2
+    f3=0x00000000000000000000000000000000000000f3
+    admit "$caller" "$other" "$caller"
+    admit "$caller" "$third" "$caller" "$other"
+    admit "$caller" "$fourth" "$caller" "$other"
+    call "out 1" zkIsMember "$fourth"
+    # zkProposeExit reverts for a caller that is not a member and for a target
+    # that is not a member (the zero address included).
+    call revert zkProposeExit "$ee"
+    callAt 1 "$ee" revert zkProposeExit "$fourth"
+    call revert zkProposeExit 0x0000000000000000000000000000000000000000
+    call ok zkProposeExit "$fourth"
+    gasRow 49123
+    # One poll at a time, for the two kinds.
+    call revert zkPropose "$ee"
+    call revert zkProposeExit "$third"
+    # 2 ayes of 4 members (2 x 2 = nmem) do not expel; 3 ayes expel dd: not a
+    # member, Forfeited, nmem 3.
+    call ok zkVote 1
+    callAt 1 "$other" ok zkVote 1
+    call revert zkAmend
+    callAt 1 "$third" ok zkVote 1
+    call ok zkAmend
+    gasRow 38744
+    call "out 0" zkIsMember "$fourth"
+    callAt 1 "$fourth" revert zkPropose "$ee"
+    callAt 1 "$fourth" revert zkDepart
+    # 2 nays of 3 members (2 x 2 >= 3) reject the exit of cc: cc stays.
+    call ok zkProposeExit "$third"
+    callAt 1 "$other" ok zkVote 0
+    callAt 1 "$third" ok zkVote 0
+    call ok zkAmend
+    gasRow 25344
+    call "out 1" zkIsMember "$third"
+    # After an exit poll, an admit poll admits again (kind 0). Then ee exits
+    # (zkDepart) during its own exit poll: the amend only closes the poll, and
+    # nmem drops one time (4 to 3), not two times.
+    admit "$caller" "$ee" "$caller" "$other"
+    call ok zkProposeExit "$ee"
+    call ok zkVote 1
+    callAt 1 "$other" ok zkVote 1
+    callAt 1 "$third" ok zkVote 1
+    callAt 1 "$ee" ok zkDepart
+    call ok zkAmend
+    gasRow 27416
+    # nmem is 3: one nay (2 x 1 < 3) does not reject f1, thus the amend
+    # reverts (with nmem 2 it rejects). Then 2 ayes (2 x 2 > 3) admit f1.
+    call ok zkPropose "$f1"
+    call ok zkVote 0
+    call revert zkAmend
+    callAt 1 "$other" ok zkVote 1
+    callAt 1 "$third" ok zkVote 1
+    call ok zkAmend
+    # F7, an admit poll: nmem 4 (aa bb cc f1). aa and bb vote yes on f2, then
+    # the two exit. Each exit withdraws its vote: ayes 0, nmem 2, thus the
+    # amend reverts. cc and f1 vote no and reject f2, then admit f2.
+    call ok zkPropose "$f2"
+    call ok zkVote 1
+    callAt 1 "$other" ok zkVote 1
+    call ok zkDepart
+    callAt 1 "$other" ok zkDepart
+    callAt 1 "$third" revert zkAmend
+    callAt 1 "$third" ok zkVote 0
+    callAt 1 "$f1" ok zkVote 0
+    callAt 1 "$third" ok zkAmend
+    admit "$third" "$f2" "$third" "$f1"
+    # F7, an exit poll: nmem 4 (cc f1 f2 f3). cc and f1 vote yes on the exit
+    # of f3, then the two exit: ayes 0, nmem 2, thus the amend reverts. f2
+    # and f3 vote no and reject the exit: f3 stays.
+    admit "$third" "$f3" "$third" "$f1"
+    callAt 1 "$third" ok zkProposeExit "$f3"
+    callAt 1 "$third" ok zkVote 1
+    callAt 1 "$f1" ok zkVote 1
+    callAt 1 "$third" ok zkDepart
+    callAt 1 "$f1" ok zkDepart
+    callAt 1 "$f2" revert zkAmend
+    callAt 1 "$f2" ok zkVote 0
+    callAt 1 "$f3" ok zkVote 0
+    callAt 1 "$f2" ok zkAmend
+    call "out 1" zkIsMember "$f3"
+  fi
 fi
 
 rm -rf "$tmp"

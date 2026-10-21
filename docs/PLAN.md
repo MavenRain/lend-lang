@@ -379,6 +379,17 @@ step numbers count the calls, as in the Part 4 table):
 | 16 | zkVote 1, first yes (row) | ok | 53,734 |
 | 18 | zkAmend, admit ee (row) | ok | 84,759 |
 
+S11 Part 1 (2026-10-20): the governed exit (section 7). The state gets
+kind at the end (slot 15: 0 admit, 1 exit), and zkProposeExit comes after
+zkIsMember as the last entry, so no dispatch place moves. Two rows move:
+zkVote 53,734 to 54,023 (+289: voted holds 2 poll + 1 + c for the
+withdraw on exit) and zkAmend (admit) 84,759 to 86,949 (+2,190: one cold
+SLOAD of kind and the branch). The other 6 rows keep their numbers. Four
+rows are new: zkProposeExit 49,123 and the exit zkAmend 38,744 (expel),
+25,344 (reject) and 27,416 (the close after the candidate exits). The
+sizes (docs/VALIDATION.md, S11 Part 1): runtime 9194 bytes, initcode 9291
+bytes, deploy 1,907,039.
+
 The S10 size rows after Part 5 (S10 close, 2026-10-20, measured on a
 copy of 48a6b86). The sizes take the test/build.sh:134 form. The deploy
 gas takes the form of the derivation above, on the initcode:
@@ -478,6 +489,7 @@ O19).
 | constructor (agent keys, member set, initial terms) | stores the agent keys (G1 points), the member set, the terms, poll id 0 |
 | `vote(choice, signature)` | adds one coordinate of the proposal configuration to the count per choice (O12) |
 | `amend(admits, exits)` | amendPath: applies the membership path, installs `Gov L` and the terms it selects, transports the ledger (exits forfeit), opens a grace window, increments the poll id, sets the counts to zero |
+| `proposeExit(a)` (S11 Part 1: `zkProposeExit`, and the exit branch of `zkAmend`) | opens an exit poll (poll kind 1) on the member a; amend expels a when 2 ayes > nmem, and closes the poll only when a exited during the poll |
 | `borrow(c', proof, signature)`, `repay(c', proof, signature)` | the steps of section 6; a bad proof or a non-member reverts |
 | `liquidate(agent)` | after the grace window, a position without a fresh health proof becomes Forfeited |
 | views | `terms()`, `commitmentOf(agent)`, `isMember(agent)`, `selfConstituting()` |
@@ -490,9 +502,18 @@ ayes > nmem, rejects it when 2 nays >= nmem, and else reverts; both results
 close the poll and increment the poll id. The voter set is the member flag,
 so a liquidated member still votes. The caller signs each vote, so the votes
 are public and O12 stays open. `zkDepart()` is the self-exit (exitOne); an
-exit while a poll is open is accepted (the cast vote stays, nmem drops).
-`zkIsMember(a)` is the `isMember` view. There is one admit for each poll,
-no governed exit and no terms menu.
+exit while a poll is open is accepted, and nmem drops. S11 Part 1 (ruling
+Q2 (a), 2026-10-20) replaces the Part 5 rule (the cast vote stays): the
+exit withdraws the caller's vote of the open poll, so voters cannot lower
+the bar by an exit. `zkIsMember(a)` is the `isMember` view. S11 Part 1
+adds the governed exit. `zkProposeExit(a)` opens one poll on the exit of
+one member a (poll kind 1; zkPropose opens kind 0, the admit). It reverts
+when the caller is not a member, a poll is open, or a is not a member; the
+caller can be a. The exit branch of `zkAmend()` has the admit bar: 2 ayes
+> nmem expels a (not a member, Forfeited, nmem - 1) if a is still a
+member, and only closes the poll if a exited during the poll; 2 nays >=
+nmem rejects; else revert. There is one candidate for each poll and no
+terms menu.
 
 The contract holds no tokens by default (O18): the design admits no deposit
 or withdraw operation, so the ledger is a private credit ledger in one
@@ -519,7 +540,7 @@ for each build), the counts in docs/STATUS.md, and a USER commit.
 | S8 | port orbit-lang B1 676c7a8 (dependent elim for domain families) and B2 eafa1df (outcomeSet and menu slots, lend names, separate splice); O27 option (b) probe, then amendPath if it clears; law 2 uniqueness (USER ruling S8): DONE 2026-10-18, the guest term is amendExit (amendPath stays reserved) | the orbit-lang B1 rows (elim-*); the B2 rows with lend names (outcome-set-type, menu-type, dao-no-set, dao-redefine); amendPath rows if O27 (b) clears |
 | S9 | ZK ledger: Pedersen on BN254 in C, Sigma-protocol verifier lowering, zkEquiv, PrivateLoan, borrow, repay, liquidate (moved from S8, USER ruling S8) | known-answer vectors; mutants: wrong opening, range overflow, non-member step, step on a Forfeited position, point not on the curve |
 | S10 | contract end to end: deploy, vote, amend, borrow, repay, liquidate; host and EVM differential; gas table; chain probe | differential rows, revert rows, EIP-170 and EIP-3860 size limits; Part 1 Loan and zkPrivateLoan DONE 2026-10-20; Part 2 pure ledger borrow, repay, liquidate DONE 2026-10-20; Part 3 differential, gas table, EIP rows DONE 2026-10-20; Part 4 ledger/contract integration DONE 2026-10-20; Part 5 governed admit DONE 2026-10-20; S10 CLOSED 2026-10-20: the S10 form of vote and amend (section 7); the governed exit and the terms menu move to S11, O12 (a) to S12, the chain probe to a USER step (O22) |
-| S11 | governance (added at the S10 close, USER ruling 2026-10-20): the governed exit (a poll kind, admit or exit), then the terms menu (`Gov L`) and the O17 window after a terms change | exit poll rows (the zkDepart state change on cand, an exit poll on a non-member), the bar effect of an exit during a poll (VALIDATION, S10 close), the 8 S10 gas rows kept or ruled, a liquidate inside the window |
+| S11 | governance (added at the S10 close, USER ruling 2026-10-20): the governed exit (a poll kind, admit or exit), then the terms menu (`Gov L`) and the O17 window after a terms change | exit poll rows (the zkDepart state change on cand, an exit poll on a non-member), the bar effect of an exit during a poll (VALIDATION, S10 close), the 8 S10 gas rows kept or ruled, a liquidate inside the window; Part 1 governed exit DONE 2026-10-20 (kind at slot 15, zkProposeExit, the zkAmend exit branch, an exit withdraws the vote of the open poll) |
 | S12 | O12 (a) (added at the S10 close): bLSAG ring votes over stored member keys (O19 (b)) | a vote by a key outside the ring, a reused key image, the zkVote gas row as a function of nmem |
 | S13 | regimes (optional, O23), docs, final gate (S11 until the S10 close) | regime rows |
 

@@ -472,6 +472,42 @@ voters exit, nmem is 2, and 2 x 2 > 2 admits the candidate with no vote
 from the 2 remaining members. The docs did not give this effect before
 the close; the S11 governed exit must keep it in view.
 
+S11 Part 1 (2026-10-20) adds the governed exit of PLAN section 7 in form C
+of the S11 Part 1 brief (rulings Q0 to Q5 (a)). The state gets kind at
+the end (slot 15: 0 admit, 1 exit). zkProposeExit (the last entry, after
+zkIsMember) opens an exit poll on a member. It reverts for a caller that
+is not a member, an open poll, or a target that is not a member (the zero
+address included). zkAmend gets an exit branch with the admit bar: 2 ayes
+> nmem expels the candidate (the zkDepart change) if it is still a
+member, and only closes the poll if it exited during the poll (without
+this test, nmem drops two times); 2 nays >= nmem rejects; each close
+writes kind 0. The bar effect of the S10 close is fixed (Q2 (a), withdraw
+on exit): voted holds 2 poll + 1 + c, and zkDepart takes the caller's vote
+of the open poll from ayes or nays. With nmem 4 and two yes votes, both
+voters exit: ayes 0, nmem 2, and the amend reverts for an admit poll and
+for an exit poll; the 2 remaining members then reject. zk chain 114 to
+192 steps (180 calls and 12 gas rows; the exit block runs on a second
+deploy). The run script has 55 calls (44 before), and test/run/zk.out
+prints the new slot. The 7 mutants of the brief (the kind test, the
+candidate member test, the nmem decrement, the status 2 write, the exit
+bar, the dispatch order and the withdraw) are all killed.
+
+| Row | Before | S11 Part 1 | Change |
+|---|---|---|---|
+| zkVote 1, first yes | 53,734 | 54,023 | +289 (voted holds 2 poll + 1 + c) |
+| zkAmend, admit ee | 84,759 | 86,949 | +2,190 (one cold SLOAD of kind and the branch) |
+| zkProposeExit, first | new | 49,123 | new row |
+| zkAmend, exit, expel | new | 38,744 | new row |
+| zkAmend, exit, reject | new | 25,344 | new row |
+| zkAmend, exit, the candidate exited | new | 27,416 | new row |
+
+The other 6 gas rows do not move. The sizes after Part 1 (the
+test/build.sh:134 form): runtime 9194 bytes (+900, 37.4 % of EIP-170
+24576), initcode 9291 bytes (+900, 18.9 % of EIP-3860 49152). The deploy
+gas, measured in the form of the PLAN section 6 derivation, is 1,907,039
+(9194 x 200 for the code deposit, 68,239 for the constructor and the
+rest).
+
 Staged review (2026-10-19) reproduced and fixed three defects:
 
 - HIGH: Schnorr and bit provers reused the same deterministic nonce for
